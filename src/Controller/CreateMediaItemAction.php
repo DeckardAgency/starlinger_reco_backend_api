@@ -111,9 +111,10 @@ final class CreateMediaItemAction extends AbstractController implements Processo
 
         $mediaItem = new MediaItem();
 
-        // Get mime type before moving the file
+        // Get mime type and file size before moving the file
         $mimeTypes = new MimeTypes();
         $mimeType = $mimeTypes->guessMimeType($uploadedFile->getPathname());
+        $fileSize = $uploadedFile->getSize();
 
         $originalFilename = pathinfo($uploadedFile->getClientOriginalName(), PATHINFO_FILENAME);
         $safeFilename = $this->slugger->slug($originalFilename);
@@ -133,6 +134,7 @@ final class CreateMediaItemAction extends AbstractController implements Processo
         $mediaItem->setFilename($newFilename);
         $mediaItem->setMimeType($mimeType);
         $mediaItem->setFilePath('/uploads/'.$newFilename);
+        $mediaItem->setFileSize($fileSize);
 
         $this->entityManager->persist($mediaItem);
         $this->entityManager->flush();

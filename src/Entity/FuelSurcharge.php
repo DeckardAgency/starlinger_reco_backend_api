@@ -18,7 +18,6 @@ use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
-use Symfony\Component\Validator\Constraints as Assert;
 
 #[ApiResource(
     operations: [
@@ -76,6 +75,18 @@ class FuelSurcharge
     #[ORM\Column(type: 'decimal', precision: 12, scale: 4, nullable: true)]
     #[Groups(['fuel_surcharge:read', 'fuel_surcharge:write'])]
     private ?string $fuelSurcharge = null;
+
+    #[ORM\Column(type: 'decimal', precision: 12, scale: 4, nullable: true)]
+    #[Groups(['fuel_surcharge:read', 'fuel_surcharge:write'])]
+    private ?string $sizeFrom = null;
+
+    #[ORM\Column(type: 'decimal', precision: 12, scale: 4, nullable: true)]
+    #[Groups(['fuel_surcharge:read', 'fuel_surcharge:write'])]
+    private ?string $sizeTo = null;
+
+    #[ORM\Column(type: 'decimal', precision: 12, scale: 4, nullable: true)]
+    #[Groups(['fuel_surcharge:read', 'fuel_surcharge:write'])]
+    private ?string $priceBase = null;
 
     /**
      * Legacy database ID for migration
@@ -145,6 +156,39 @@ class FuelSurcharge
     public function setFuelSurcharge(?string $fuelSurcharge): static
     {
         $this->fuelSurcharge = $fuelSurcharge;
+        return $this;
+    }
+
+    public function getSizeFrom(): ?string
+    {
+        return $this->sizeFrom;
+    }
+
+    public function setSizeFrom(?string $sizeFrom): static
+    {
+        $this->sizeFrom = $sizeFrom;
+        return $this;
+    }
+
+    public function getSizeTo(): ?string
+    {
+        return $this->sizeTo;
+    }
+
+    public function setSizeTo(?string $sizeTo): static
+    {
+        $this->sizeTo = $sizeTo;
+        return $this;
+    }
+
+    public function getPriceBase(): ?string
+    {
+        return $this->priceBase;
+    }
+
+    public function setPriceBase(?string $priceBase): static
+    {
+        $this->priceBase = $priceBase;
         return $this;
     }
 

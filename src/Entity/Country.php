@@ -15,6 +15,7 @@ use ApiPlatform\Metadata\Put;
 use App\Repository\CountryRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -95,6 +96,7 @@ class Country
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     #[Groups(['country:read', 'country:write'])]
+    #[SerializedName('isActive')]
     private bool $isActive = true;
 
     /**
@@ -201,7 +203,7 @@ class Country
         return $this;
     }
 
-    public function isActive(): bool
+    public function getIsActive(): bool
     {
         return $this->isActive;
     }

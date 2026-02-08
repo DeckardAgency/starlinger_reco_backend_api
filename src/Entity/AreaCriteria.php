@@ -12,6 +12,7 @@ use ApiPlatform\Metadata\Delete;
 use App\Repository\AreaCriteriaRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -123,6 +124,7 @@ class AreaCriteria
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     #[Groups(['area_criteria:read', 'area_criteria:write', 'area:read'])]
+    #[SerializedName('isActive')]
     private bool $isActive = true;
 
     #[ORM\Column(type: 'integer', options: ['default' => 0])]
@@ -235,7 +237,7 @@ class AreaCriteria
         return $this;
     }
 
-    public function isActive(): bool
+    public function getIsActive(): bool
     {
         return $this->isActive;
     }

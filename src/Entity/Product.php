@@ -20,6 +20,7 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use ApiPlatform\OpenApi\Model;
@@ -135,6 +136,59 @@ class Product
     #[ORM\Column(length: 255, nullable: true)]
     #[Groups(['product:read', 'product:write'])]
     private ?string $statistic = null;
+
+    #[ORM\Column(name: 'is_active', type: 'boolean', options: ['default' => true])]
+    #[Groups(['product:read', 'product:write'])]
+    #[SerializedName('isActive')]
+    private bool $isActive = true;
+
+    #[ORM\Column(name: 'ready_for_shop', type: 'boolean', options: ['default' => false])]
+    #[Groups(['product:read', 'product:write'])]
+    private bool $readyForShop = false;
+
+    #[ORM\Column(type: 'integer', nullable: true)]
+    #[Groups(['product:read', 'product:write'])]
+    private ?int $qty = null;
+
+    #[ORM\Column(name: 'qty_step', type: 'integer', nullable: true)]
+    #[Groups(['product:read', 'product:write'])]
+    private ?int $qtyStep = null;
+
+    #[ORM\Column(name: 'quote_item_limit', type: 'integer', nullable: true)]
+    #[Groups(['product:read', 'product:write'])]
+    private ?int $quoteItemLimit = null;
+
+    #[ORM\Column(name: 'fixed_qty', type: 'integer', nullable: true)]
+    #[Groups(['product:read', 'product:write'])]
+    private ?int $fixedQty = null;
+
+    #[ORM\Column(name: 'product_group_id', type: 'string', length: 36, nullable: true)]
+    #[Groups(['product:read', 'product:write'])]
+    private ?string $productGroupId = null;
+
+    #[ORM\Column(name: 'catalog_code', length: 100, nullable: true)]
+    #[Groups(['product:read', 'product:write'])]
+    private ?string $catalogCode = null;
+
+    #[ORM\Column(name: 'retail_price', type: 'float', nullable: true)]
+    #[Groups(['product:read', 'product:write'])]
+    private ?float $retailPrice = null;
+
+    #[ORM\Column(name: 'tax_type_id', type: 'string', length: 36, nullable: true)]
+    #[Groups(['product:read', 'product:write'])]
+    private ?string $taxTypeId = null;
+
+    #[ORM\Column(length: 10, nullable: true, options: ['default' => 'EUR'])]
+    #[Groups(['product:read', 'product:write'])]
+    private ?string $currency = 'EUR';
+
+    #[ORM\Column(name: 'discount_percent', type: 'float', nullable: true)]
+    #[Groups(['product:read', 'product:write'])]
+    private ?float $discountPercent = null;
+
+    #[ORM\Column(name: 'discount_price', type: 'float', nullable: true)]
+    #[Groups(['product:read', 'product:write'])]
+    private ?float $discountPrice = null;
 
     #[ORM\ManyToOne(targetEntity: MediaItem::class, cascade: ['persist'], inversedBy: 'products')]
     #[ORM\JoinColumn(nullable: true)]
@@ -316,6 +370,149 @@ class Product
     public function setFeaturedImage(?MediaItem $featuredImage): static
     {
         $this->featuredImage = $featuredImage;
+        return $this;
+    }
+
+    public function getIsActive(): bool
+    {
+        return $this->isActive;
+    }
+
+    public function setIsActive(bool $isActive): static
+    {
+        $this->isActive = $isActive;
+        return $this;
+    }
+
+    public function isReadyForShop(): bool
+    {
+        return $this->readyForShop;
+    }
+
+    public function setReadyForShop(bool $readyForShop): static
+    {
+        $this->readyForShop = $readyForShop;
+        return $this;
+    }
+
+    public function getQty(): ?int
+    {
+        return $this->qty;
+    }
+
+    public function setQty(?int $qty): static
+    {
+        $this->qty = $qty;
+        return $this;
+    }
+
+    public function getQtyStep(): ?int
+    {
+        return $this->qtyStep;
+    }
+
+    public function setQtyStep(?int $qtyStep): static
+    {
+        $this->qtyStep = $qtyStep;
+        return $this;
+    }
+
+    public function getQuoteItemLimit(): ?int
+    {
+        return $this->quoteItemLimit;
+    }
+
+    public function setQuoteItemLimit(?int $quoteItemLimit): static
+    {
+        $this->quoteItemLimit = $quoteItemLimit;
+        return $this;
+    }
+
+    public function getFixedQty(): ?int
+    {
+        return $this->fixedQty;
+    }
+
+    public function setFixedQty(?int $fixedQty): static
+    {
+        $this->fixedQty = $fixedQty;
+        return $this;
+    }
+
+    public function getProductGroupId(): ?string
+    {
+        return $this->productGroupId;
+    }
+
+    public function setProductGroupId(?string $productGroupId): static
+    {
+        $this->productGroupId = $productGroupId;
+        return $this;
+    }
+
+    public function getCatalogCode(): ?string
+    {
+        return $this->catalogCode;
+    }
+
+    public function setCatalogCode(?string $catalogCode): static
+    {
+        $this->catalogCode = $catalogCode;
+        return $this;
+    }
+
+    public function getRetailPrice(): ?float
+    {
+        return $this->retailPrice;
+    }
+
+    public function setRetailPrice(?float $retailPrice): static
+    {
+        $this->retailPrice = $retailPrice;
+        return $this;
+    }
+
+    public function getTaxTypeId(): ?string
+    {
+        return $this->taxTypeId;
+    }
+
+    public function setTaxTypeId(?string $taxTypeId): static
+    {
+        $this->taxTypeId = $taxTypeId;
+        return $this;
+    }
+
+    public function getCurrency(): ?string
+    {
+        return $this->currency;
+    }
+
+    public function setCurrency(?string $currency): static
+    {
+        $this->currency = $currency;
+        return $this;
+    }
+
+    public function getDiscountPercent(): ?float
+    {
+        return $this->discountPercent;
+    }
+
+    public function setDiscountPercent(?float $discountPercent): static
+    {
+        $this->discountPercent = $discountPercent;
+        return $this;
+    }
+
+    public function getDiscountPrice(): ?float
+    {
+        return $this->discountPrice;
+    }
+
+    public function setDiscountPrice(?float $discountPrice): static
+    {
+        $this->discountPrice = $discountPrice;
         return $this;
     }
 

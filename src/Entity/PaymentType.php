@@ -12,9 +12,13 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use ApiPlatform\Metadata\ApiProperty;
 use App\Repository\PaymentTypeRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -122,6 +126,7 @@ class PaymentType
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     #[Groups(['payment_type:read', 'payment_type:write'])]
+    #[SerializedName('isActive')]
     private bool $isActive = true;
 
     #[ORM\Column(type: 'integer', options: ['default' => 0])]
@@ -145,9 +150,15 @@ class PaymentType
     #[Groups(['payment_type:read'])]
     private ?\DateTimeInterface $updatedAt = null;
 
+    #[ORM\OneToMany(targetEntity: MediaItem::class, mappedBy: 'paymentTypeDocument', cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[Groups(['payment_type:read', 'payment_type:write'])]
+    #[ApiProperty(writableLink: true)]
+    private Collection $documents;
+
     public function __construct()
     {
         $this->id = Uuid::v4();
+        $this->documents = new ArrayCollection();
     }
 
     public function getId(): ?Uuid
@@ -320,7 +331,7 @@ class PaymentType
         return $this;
     }
 
-    public function isActive(): bool
+    public function getIsActive(): bool
     {
         return $this->isActive;
     }
@@ -372,6 +383,35 @@ class PaymentType
     public function setUpdatedAt(\DateTimeInterface $updatedAt): static
     {
         $this->updatedAt = $updatedAt;
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, MediaItem>
+     */
+    public function getDocuments(): Collection
+    {
+        return $this->documents;
+    }
+
+    public function addDocument(MediaItem $document): static
+    {
+        if (!$this->documents->contains($document)) {
+            $this->documents->add($document);
+            $document->setPaymentTypeDocument($this);
+        }
+
+        return $this;
+    }
+
+    public function removeDocument(MediaItem $document): static
+    {
+        if ($this->documents->removeElement($document)) {
+            if ($document->getPaymentTypeDocument() === $this) {
+                $document->setPaymentTypeDocument(null);
+            }
+        }
+
         return $this;
     }
 }

@@ -12,9 +12,13 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use ApiPlatform\Metadata\ApiProperty;
 use App\Repository\WarehouseRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -167,9 +171,38 @@ class Warehouse
     #[Groups(['warehouse:read', 'warehouse:write'])]
     private ?\DateTimeInterface $sundayTo = null;
 
+    #[ORM\Column(type: 'text', nullable: true)]
+    #[Groups(['warehouse:read', 'warehouse:write'])]
+    private ?string $description = null;
+
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Groups(['warehouse:read', 'warehouse:write'])]
+    private ?string $contactPerson = null;
+
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     #[Groups(['warehouse:read', 'warehouse:write'])]
+    #[SerializedName('isActive')]
     private bool $isActive = true;
+
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    #[Groups(['warehouse:read', 'warehouse:write'])]
+    #[SerializedName('readyForShop')]
+    private bool $readyForShop = false;
+
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    #[Groups(['warehouse:read', 'warehouse:write'])]
+    #[SerializedName('keepUrl')]
+    private bool $keepUrl = false;
+
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    #[Groups(['warehouse:read', 'warehouse:write'])]
+    #[SerializedName('autoGenerateUrl')]
+    private bool $autoGenerateUrl = false;
+
+    #[ORM\OneToMany(targetEntity: MediaItem::class, mappedBy: 'warehouseDocument', cascade: ['persist'], orphanRemoval: true)]
+    #[Groups(['warehouse:read', 'warehouse:write'])]
+    #[ApiProperty(writableLink: false)]
+    private Collection $documents;
 
     #[ORM\Column(type: 'integer', nullable: true)]
     #[Groups(['warehouse:read', 'warehouse:write'])]
@@ -195,6 +228,7 @@ class Warehouse
     public function __construct()
     {
         $this->id = Uuid::v4();
+        $this->documents = new ArrayCollection();
     }
 
     public function getId(): ?Uuid
@@ -323,7 +357,8 @@ class Warehouse
         return $this;
     }
 
-    public function isShowAsLocation(): bool
+    #[SerializedName('showAsLocation')]
+    public function getShowAsLocation(): bool
     {
         return $this->showAsLocation;
     }
@@ -489,7 +524,29 @@ class Warehouse
         return $this;
     }
 
-    public function isActive(): bool
+    public function getDescription(): ?string
+    {
+        return $this->description;
+    }
+
+    public function setDescription(?string $description): static
+    {
+        $this->description = $description;
+        return $this;
+    }
+
+    public function getContactPerson(): ?string
+    {
+        return $this->contactPerson;
+    }
+
+    public function setContactPerson(?string $contactPerson): static
+    {
+        $this->contactPerson = $contactPerson;
+        return $this;
+    }
+
+    public function getIsActive(): bool
     {
         return $this->isActive;
     }
@@ -497,6 +554,66 @@ class Warehouse
     public function setIsActive(bool $isActive): static
     {
         $this->isActive = $isActive;
+        return $this;
+    }
+
+    public function getReadyForShop(): bool
+    {
+        return $this->readyForShop;
+    }
+
+    public function setReadyForShop(bool $readyForShop): static
+    {
+        $this->readyForShop = $readyForShop;
+        return $this;
+    }
+
+    public function getKeepUrl(): bool
+    {
+        return $this->keepUrl;
+    }
+
+    public function setKeepUrl(bool $keepUrl): static
+    {
+        $this->keepUrl = $keepUrl;
+        return $this;
+    }
+
+    public function getAutoGenerateUrl(): bool
+    {
+        return $this->autoGenerateUrl;
+    }
+
+    public function setAutoGenerateUrl(bool $autoGenerateUrl): static
+    {
+        $this->autoGenerateUrl = $autoGenerateUrl;
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, MediaItem>
+     */
+    public function getDocuments(): Collection
+    {
+        return $this->documents;
+    }
+
+    public function addDocument(MediaItem $document): static
+    {
+        if (!$this->documents->contains($document)) {
+            $this->documents->add($document);
+            $document->setWarehouseDocument($this);
+        }
+        return $this;
+    }
+
+    public function removeDocument(MediaItem $document): static
+    {
+        if ($this->documents->removeElement($document)) {
+            if ($document->getWarehouseDocument() === $this) {
+                $document->setWarehouseDocument(null);
+            }
+        }
         return $this;
     }
 

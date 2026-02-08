@@ -15,6 +15,7 @@ use ApiPlatform\Metadata\Put;
 use App\Repository\DiscountRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -64,6 +65,7 @@ class Discount
 
     #[ORM\Column(type: 'boolean')]
     #[Groups(['discount:read', 'discount:write'])]
+    #[SerializedName('isActive')]
     private bool $isActive = true;
 
     #[ORM\Column(type: 'datetime', nullable: true)]
@@ -124,7 +126,7 @@ class Discount
         return $this;
     }
 
-    public function isActive(): bool
+    public function getIsActive(): bool
     {
         return $this->isActive;
     }

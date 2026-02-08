@@ -12,11 +12,13 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use ApiPlatform\Metadata\ApiProperty;
 use App\Repository\DeliveryTypeRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -83,6 +85,7 @@ class DeliveryType
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
+    #[SerializedName('isDelivery')]
     private bool $isDelivery = true;
 
     #[ORM\Column(type: 'decimal', precision: 10, scale: 2, nullable: true)]
@@ -100,19 +103,28 @@ class DeliveryType
 
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
+    #[SerializedName('hideIfNotApplicable')]
     private bool $hideIfNotApplicable = false;
 
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
+    #[SerializedName('allowRecurringPayment')]
     private bool $allowRecurringPayment = false;
 
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
+    #[SerializedName('useAsDefault')]
     private bool $useAsDefault = false;
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
+    #[SerializedName('isActive')]
     private bool $isActive = true;
+
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    #[Groups(['delivery_type:read', 'delivery_type:write'])]
+    #[SerializedName('readyForShop')]
+    private bool $readyForShop = false;
 
     #[ORM\Column(type: 'integer', options: ['default' => 0])]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
@@ -123,6 +135,11 @@ class DeliveryType
      */
     #[ORM\OneToMany(targetEntity: DeliveryPrice::class, mappedBy: 'deliveryType', cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $prices;
+
+    #[ORM\OneToMany(targetEntity: MediaItem::class, mappedBy: 'deliveryTypeDocument', cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[Groups(['delivery_type:read', 'delivery_type:write'])]
+    #[ApiProperty(writableLink: true)]
+    private Collection $documents;
 
     /**
      * Legacy database ID for migration
@@ -145,6 +162,7 @@ class DeliveryType
     {
         $this->id = Uuid::v4();
         $this->prices = new ArrayCollection();
+        $this->documents = new ArrayCollection();
     }
 
     public function getId(): ?Uuid
@@ -207,7 +225,7 @@ class DeliveryType
         return $this;
     }
 
-    public function isDelivery(): bool
+    public function getIsDelivery(): bool
     {
         return $this->isDelivery;
     }
@@ -251,7 +269,7 @@ class DeliveryType
         return $this;
     }
 
-    public function isHideIfNotApplicable(): bool
+    public function getHideIfNotApplicable(): bool
     {
         return $this->hideIfNotApplicable;
     }
@@ -262,7 +280,7 @@ class DeliveryType
         return $this;
     }
 
-    public function isAllowRecurringPayment(): bool
+    public function getAllowRecurringPayment(): bool
     {
         return $this->allowRecurringPayment;
     }
@@ -273,7 +291,7 @@ class DeliveryType
         return $this;
     }
 
-    public function isUseAsDefault(): bool
+    public function getUseAsDefault(): bool
     {
         return $this->useAsDefault;
     }
@@ -284,7 +302,7 @@ class DeliveryType
         return $this;
     }
 
-    public function isActive(): bool
+    public function getIsActive(): bool
     {
         return $this->isActive;
     }
@@ -292,6 +310,17 @@ class DeliveryType
     public function setIsActive(bool $isActive): static
     {
         $this->isActive = $isActive;
+        return $this;
+    }
+
+    public function getReadyForShop(): bool
+    {
+        return $this->readyForShop;
+    }
+
+    public function setReadyForShop(bool $readyForShop): static
+    {
+        $this->readyForShop = $readyForShop;
         return $this;
     }
 
@@ -363,6 +392,35 @@ class DeliveryType
     public function setUpdatedAt(\DateTimeInterface $updatedAt): static
     {
         $this->updatedAt = $updatedAt;
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, MediaItem>
+     */
+    public function getDocuments(): Collection
+    {
+        return $this->documents;
+    }
+
+    public function addDocument(MediaItem $document): static
+    {
+        if (!$this->documents->contains($document)) {
+            $this->documents->add($document);
+            $document->setDeliveryTypeDocument($this);
+        }
+
+        return $this;
+    }
+
+    public function removeDocument(MediaItem $document): static
+    {
+        if ($this->documents->removeElement($document)) {
+            if ($document->getDeliveryTypeDocument() === $this) {
+                $document->setDeliveryTypeDocument(null);
+            }
+        }
+
         return $this;
     }
 }

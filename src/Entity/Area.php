@@ -18,6 +18,7 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -93,6 +94,7 @@ class Area
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     #[Groups(['area:read', 'area:write'])]
+    #[SerializedName('isActive')]
     private bool $isActive = true;
 
     #[ORM\Column(type: 'integer', options: ['default' => 0])]
@@ -273,7 +275,7 @@ class Area
         return $this;
     }
 
-    public function isActive(): bool
+    public function getIsActive(): bool
     {
         return $this->isActive;
     }
@@ -322,7 +324,7 @@ class Area
     public function getActiveManagers(): array
     {
         return $this->areaManagers->filter(function (AreaManager $am) {
-            return $am->isActive() && $am->getManager()->getIsActive();
+            return $am->getIsActive() && $am->getManager()->getIsActive();
         })->toArray();
     }
 

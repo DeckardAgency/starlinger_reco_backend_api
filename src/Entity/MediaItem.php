@@ -64,23 +64,27 @@ class MediaItem
 {
     #[ORM\Id]
     #[ORM\Column(type: "uuid", unique: true)]
-    #[Groups(['media_item:read', 'documentation:read', 'documentation:item'])]
+    #[Groups(['media_item:read', 'documentation:read', 'documentation:item', 'payment_type:read', 'delivery_type:read', 'warehouse:read'])]
     private ?Uuid $id = null;
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank(groups: ['media_item:write', 'media_item:create'])]
-    #[Groups(['media_item:read', 'media_item:write', 'documentation:read', 'documentation:item'])]
+    #[Groups(['media_item:read', 'media_item:write', 'documentation:read', 'documentation:item', 'payment_type:read', 'delivery_type:read', 'warehouse:read'])]
     private ?string $filename = null;
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank(groups: ['media_item:write', 'media_item:create'])]
-    #[Groups(['media_item:read', 'media_item:write', 'documentation:read', 'documentation:item'])]
+    #[Groups(['media_item:read', 'media_item:write', 'documentation:read', 'documentation:item', 'payment_type:read', 'delivery_type:read', 'warehouse:read'])]
     private ?string $mimeType = null;
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank(groups: ['media_item:write', 'media_item:create'])]
-    #[Groups(['media_item:read', 'media_item:write', 'documentation:read', 'documentation:item'])]
+    #[Groups(['media_item:read', 'media_item:write', 'documentation:read', 'documentation:item', 'payment_type:read', 'delivery_type:read', 'warehouse:read'])]
     private ?string $filePath = null;
+
+    #[ORM\Column(type: 'integer', nullable: true)]
+    #[Groups(['media_item:read', 'payment_type:read', 'delivery_type:read', 'warehouse:read'])]
+    private ?int $fileSize = null;
 
     #[Assert\NotNull(groups: ['media_item:create'])]
     #[Assert\File(
@@ -143,6 +147,18 @@ class MediaItem
     #[Groups(['media_item:read', 'media_item:write'])]
     private ?Documentation $documentation = null;
 
+    #[ORM\ManyToOne(targetEntity: PaymentType::class, inversedBy: 'documents')]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
+    private ?PaymentType $paymentTypeDocument = null;
+
+    #[ORM\ManyToOne(targetEntity: DeliveryType::class, inversedBy: 'documents')]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
+    private ?DeliveryType $deliveryTypeDocument = null;
+
+    #[ORM\ManyToOne(targetEntity: Warehouse::class, inversedBy: 'documents')]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
+    private ?Warehouse $warehouseDocument = null;
+
     public function __construct()
     {
         $this->id = Uuid::v4();
@@ -195,6 +211,17 @@ class MediaItem
     public function setFilePath(string $filePath): static
     {
         $this->filePath = $filePath;
+        return $this;
+    }
+
+    public function getFileSize(): ?int
+    {
+        return $this->fileSize;
+    }
+
+    public function setFileSize(?int $fileSize): static
+    {
+        $this->fileSize = $fileSize;
         return $this;
     }
 
@@ -333,6 +360,42 @@ class MediaItem
     public function setDocumentation(?Documentation $documentation): static
     {
         $this->documentation = $documentation;
+
+        return $this;
+    }
+
+    public function getPaymentTypeDocument(): ?PaymentType
+    {
+        return $this->paymentTypeDocument;
+    }
+
+    public function setPaymentTypeDocument(?PaymentType $paymentTypeDocument): static
+    {
+        $this->paymentTypeDocument = $paymentTypeDocument;
+
+        return $this;
+    }
+
+    public function getDeliveryTypeDocument(): ?DeliveryType
+    {
+        return $this->deliveryTypeDocument;
+    }
+
+    public function setDeliveryTypeDocument(?DeliveryType $deliveryTypeDocument): static
+    {
+        $this->deliveryTypeDocument = $deliveryTypeDocument;
+
+        return $this;
+    }
+
+    public function getWarehouseDocument(): ?Warehouse
+    {
+        return $this->warehouseDocument;
+    }
+
+    public function setWarehouseDocument(?Warehouse $warehouseDocument): static
+    {
+        $this->warehouseDocument = $warehouseDocument;
 
         return $this;
     }

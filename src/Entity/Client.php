@@ -52,7 +52,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 )]
 #[ApiFilter(SearchFilter::class, properties: [
     'name' => 'partial',
-    'code' => 'exact'
+    'code' => 'exact',
+    'accountGroup.id' => 'exact'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isArchived', 'isActive'])]
 #[ORM\Entity(repositoryClass: ClientRepository::class)]
@@ -112,8 +113,8 @@ class Client
      * @var Collection<int, User>
      */
     #[ORM\OneToMany(targetEntity: User::class, mappedBy: 'client')]
-    #[Groups(['client:read'])]
-    #[ApiProperty(readableLink: false, writableLink: false)]
+    #[Groups(['client:read:details'])]
+    #[ApiProperty(readableLink: true, writableLink: false)]
     private Collection $users;
 
     /**
@@ -155,12 +156,33 @@ class Client
     #[Groups(['client:read', 'client:write', 'user:read', 'order:read', 'inquiry:read'])]
     private bool $isArchived = false;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    #[Groups(['client:read', 'client:write'])]
+    private bool $isLegalEntity = false;
+
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Groups(['client:read', 'client:write'])]
+    private ?string $accountType = null;
+
+    #[ORM\ManyToOne(targetEntity: AccountGroup::class)]
+    #[ORM\JoinColumn(name: 'account_group_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['client:read', 'client:write'])]
+    private ?AccountGroup $accountGroup = null;
+
     /**
      * @var Collection<int, Area>
      */
     #[ORM\OneToMany(targetEntity: Area::class, mappedBy: 'client', cascade: ['persist', 'remove'], orphanRemoval: true)]
     #[Groups(['client:read:details'])]
     private Collection $areas;
+
+    /**
+     * @var Collection<int, Address>
+     */
+    #[ORM\OneToMany(targetEntity: Address::class, mappedBy: 'client', cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[Groups(['client:read:details'])]
+    #[ApiProperty(readableLink: true, writableLink: true)]
+    private Collection $addresses;
 
     public function __construct()
     {
@@ -169,6 +191,7 @@ class Client
         $this->productPrices = new ArrayCollection();
         $this->installedBaseRelations = new ArrayCollection();
         $this->areas = new ArrayCollection();
+        $this->addresses = new ArrayCollection();
     }
 
     public function getId(): ?Uuid
@@ -411,6 +434,39 @@ class Client
         return $this;
     }
 
+    public function getIsLegalEntity(): bool
+    {
+        return $this->isLegalEntity;
+    }
+
+    public function setIsLegalEntity(bool $isLegalEntity): static
+    {
+        $this->isLegalEntity = $isLegalEntity;
+        return $this;
+    }
+
+    public function getAccountType(): ?string
+    {
+        return $this->accountType;
+    }
+
+    public function setAccountType(?string $accountType): static
+    {
+        $this->accountType = $accountType;
+        return $this;
+    }
+
+    public function getAccountGroup(): ?AccountGroup
+    {
+        return $this->accountGroup;
+    }
+
+    public function setAccountGroup(?AccountGroup $accountGroup): static
+    {
+        $this->accountGroup = $accountGroup;
+        return $this;
+    }
+
     public function getMaxActiveUsers(): ?int
     {
         return $this->maxActiveUsers;
@@ -465,6 +521,33 @@ class Client
         if ($this->areas->removeElement($area)) {
             if ($area->getClient() === $this) {
                 $area->setClient(null);
+            }
+        }
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Address>
+     */
+    public function getAddresses(): Collection
+    {
+        return $this->addresses;
+    }
+
+    public function addAddress(Address $address): static
+    {
+        if (!$this->addresses->contains($address)) {
+            $this->addresses->add($address);
+            $address->setClient($this);
+        }
+        return $this;
+    }
+
+    public function removeAddress(Address $address): static
+    {
+        if ($this->addresses->removeElement($address)) {
+            if ($address->getClient() === $this) {
+                $address->setClient(null);
             }
         }
         return $this;

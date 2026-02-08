@@ -309,7 +309,7 @@ class AreaAssignmentService
 
         // Get areas directly from the client entity to avoid UUID comparison issues
         foreach ($client->getAreas() as $area) {
-            if (!$area->isActive()) {
+            if (!$area->getIsActive()) {
                 continue;
             }
             foreach ($area->getActiveManagers() as $areaManager) {
@@ -335,7 +335,7 @@ class AreaAssignmentService
 
             $allMatch = true;
             foreach ($criteria as $criterion) {
-                if (!$criterion->isActive() || !$criterion->evaluate($context)) {
+                if (!$criterion->getIsActive() || !$criterion->evaluate($context)) {
                     $allMatch = false;
                     break;
                 }

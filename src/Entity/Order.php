@@ -220,7 +220,7 @@ class Order
     #[ORM\ManyToOne(targetEntity: User::class, inversedBy: 'orders')]
     #[ORM\JoinColumn(nullable: false)]
     #[Groups(['order:read', 'order:write'])]
-    #[ApiProperty(readableLink: true, writableLink: false)]
+    #[ApiProperty(readableLink: true, writableLink: true)]
     private ?User $user = null;
 
     /**

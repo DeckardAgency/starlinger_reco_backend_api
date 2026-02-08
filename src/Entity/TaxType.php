@@ -15,6 +15,7 @@ use ApiPlatform\Metadata\Put;
 use App\Repository\TaxTypeRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -79,6 +80,7 @@ class TaxType
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     #[Groups(['tax_type:read', 'tax_type:write'])]
+    #[SerializedName('isActive')]
     private bool $isActive = true;
 
     /**
@@ -152,7 +154,7 @@ class TaxType
         return $this;
     }
 
-    public function isActive(): bool
+    public function getIsActive(): bool
     {
         return $this->isActive;
     }
