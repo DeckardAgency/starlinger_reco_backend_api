@@ -3,7 +3,6 @@
 namespace App\Controller;
 
 use App\Entity\Order;
-use App\Entity\Inquiry;
 use App\Service\DashboardService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -61,27 +60,6 @@ class DashboardController extends AbstractController
                     $currentData['shopOrders']
                 )
             ],
-            'manualInquiries' => [
-                'value' => $currentData['manualInquiries'],
-                'percentageChange' => $this->calculatePercentageChange(
-                    $previousData['manualInquiries'],
-                    $currentData['manualInquiries']
-                )
-            ],
-            'activeInquiries' => [
-                'value' => $currentData['activeInquiries'],
-                'percentageChange' => $this->calculatePercentageChange(
-                    $previousData['activeInquiries'],
-                    $currentData['activeInquiries']
-                )
-            ],
-            'cancelledInquiries' => [
-                'value' => $currentData['cancelledInquiries'],
-                'percentageChange' => $this->calculatePercentageChange(
-                    $previousData['cancelledInquiries'],
-                    $currentData['cancelledInquiries']
-                )
-            ],
             'activeCarts' => [
                 'value' => $currentData['activeCarts'],
                 'percentageChange' => $this->calculatePercentageChange(
@@ -131,27 +109,6 @@ class DashboardController extends AbstractController
                  AND created_at <= :endDate
                  AND status NOT IN (:draftStatus, :cancelledStatus)) as shop_orders,
 
-                -- Manual inquiries (non-draft)
-                (SELECT COUNT(*)
-                 FROM inquiry
-                 WHERE created_at >= :startDate
-                 AND created_at <= :endDate
-                 AND is_draft = 0) as manual_inquiries,
-
-                -- Active inquiries
-                (SELECT COUNT(*)
-                 FROM inquiry
-                 WHERE created_at >= :startDate
-                 AND created_at <= :endDate
-                 AND status IN (:submittedStatus, :inReviewStatus, :moreInfoStatus, :infoProvidedStatus, :inProgressStatus)) as active_inquiries,
-
-                -- Cancelled inquiries
-                (SELECT COUNT(*)
-                 FROM inquiry
-                 WHERE created_at >= :startDate
-                 AND created_at <= :endDate
-                 AND status = :cancelledInquiryStatus) as cancelled_inquiries,
-
                 -- Active carts (draft orders)
                 (SELECT COUNT(*)
                  FROM `order`
@@ -187,20 +144,11 @@ class DashboardController extends AbstractController
             'endDate' => $endDate->format('Y-m-d H:i:s'),
             'draftStatus' => Order::STATUS_DRAFT,
             'cancelledStatus' => Order::STATUS_CANCELED,
-            'completedStatus' => Order::STATUS_COMPLETED,
-            'submittedStatus' => Inquiry::STATUS_SUBMITTED,
-            'inReviewStatus' => Inquiry::STATUS_IN_REVIEW,
-            'moreInfoStatus' => Inquiry::STATUS_MORE_INFO,
-            'infoProvidedStatus' => Inquiry::STATUS_INFORMATION_PROVIDED,
-            'inProgressStatus' => Inquiry::STATUS_IN_PROGRESS,
-            'cancelledInquiryStatus' => Inquiry::STATUS_CANCELED
+            'completedStatus' => Order::STATUS_COMPLETED
         ])->fetchAssociative();
 
         return [
             'shopOrders' => (int) $result['shop_orders'],
-            'manualInquiries' => (int) $result['manual_inquiries'],
-            'activeInquiries' => (int) $result['active_inquiries'],
-            'cancelledInquiries' => (int) $result['cancelled_inquiries'],
             'activeCarts' => (int) $result['active_carts'],
             'completedCarts' => (int) $result['completed_carts'],
             'totalShopRevenue' => (float) $result['total_shop_revenue'],
@@ -215,13 +163,6 @@ class DashboardController extends AbstractController
         }
 
         return round((($newValue - $oldValue) / $oldValue) * 100, 2);
-    }
-
-    #[Route('/v1/dashboard/inquiry-status-distribution', name: 'api_dashboard_inquiry_status_distribution', methods: ['GET'])]
-    public function inquiryStatusDistribution(): JsonResponse
-    {
-        $data = $this->dashboardService->getInquiryStatusDistribution();
-        return $this->json($data);
     }
 
     #[Route('/v1/dashboard/order-status-distribution', name: 'api_dashboard_order_status_distribution', methods: ['GET'])]

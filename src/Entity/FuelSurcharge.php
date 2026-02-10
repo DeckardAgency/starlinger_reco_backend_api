@@ -64,7 +64,7 @@ class FuelSurcharge
     private ?string $name = null;
 
     #[ORM\ManyToOne(targetEntity: DeliveryType::class)]
-    #[ORM\JoinColumn(nullable: true)]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
     #[Groups(['fuel_surcharge:read', 'fuel_surcharge:write'])]
     private ?DeliveryType $deliveryType = null;
 

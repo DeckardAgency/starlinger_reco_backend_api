@@ -17,7 +17,7 @@ use Symfony\Component\Serializer\Annotation\Groups;
             openapi: new Model\Operation(
                 tags: ['Dashboard'],
                 summary: 'Get performance overview metrics',
-                description: 'Returns key performance indicators including orders, inquiries, carts and revenue metrics with percentage changes',
+                description: 'Returns key performance indicators including orders, carts and revenue metrics with percentage changes',
                 parameters: [
                     new Model\Parameter(
                         name: 'startDate',
@@ -46,15 +46,6 @@ class DashboardResource
 
     #[Groups(['dashboard:read'])]
     public array $shopOrders;
-
-    #[Groups(['dashboard:read'])]
-    public array $manualInquiries;
-
-    #[Groups(['dashboard:read'])]
-    public array $activeInquiries;
-
-    #[Groups(['dashboard:read'])]
-    public array $cancelledInquiries;
 
     #[Groups(['dashboard:read'])]
     public array $activeCarts;

@@ -48,14 +48,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 {
     #[ORM\Id]
     #[ORM\Column(type: "uuid", unique: true)]
-    #[Groups(['user:read', 'order:read', 'inquiry:read', 'client:read:details', 'area:read', 'area_manager:read'])]
+    #[Groups(['user:read', 'order:read', 'client:read:details'])]
     private ?Uuid $id = null;
 
     #[ORM\Column(length: 180, unique: true)]
     #[Assert\NotBlank(groups: ['user:create'])]
     #[Assert\Email(groups: ['user:create', 'user:update'])]
-    #[Groups(['user:read', 'user:create', 'user:update', 'order:read', 'inquiry:read', 'client:read:details', 'area:read', 'area_manager:read'])]
+    #[Groups(['user:read', 'user:create', 'user:update', 'order:read', 'client:read:details'])]
     private ?string $email = null;
+
+    #[ORM\Column(length: 180, nullable: true)]
+    #[Groups(['user:read', 'user:create', 'user:update'])]
+    private ?string $username = null;
 
     #[ORM\Column]
     #[Groups(['user:read', 'user:create', 'user:update'])]
@@ -77,17 +81,17 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(length: 100)]
     #[Assert\NotBlank(groups: ['user:create'])]
     #[Assert\Length(min: 2, max: 100, groups: ['user:create', 'user:update'])]
-    #[Groups(['user:read', 'user:create', 'user:update', 'order:read', 'inquiry:read', 'client:read:details', 'area:read', 'area_manager:read'])]
+    #[Groups(['user:read', 'user:create', 'user:update', 'order:read', 'client:read:details'])]
     private ?string $firstName = null;
 
     #[ORM\Column(length: 100)]
     #[Assert\NotBlank(groups: ['user:create'])]
     #[Assert\Length(min: 2, max: 100, groups: ['user:create', 'user:update'])]
-    #[Groups(['user:read', 'user:create', 'user:update', 'order:read', 'inquiry:read', 'client:read:details', 'area:read', 'area_manager:read'])]
+    #[Groups(['user:read', 'user:create', 'user:update', 'order:read', 'client:read:details'])]
     private ?string $lastName = null;
 
     #[ORM\Column(length: 15, nullable: true)]
-    #[Groups(['user:read', 'user:create', 'user:update', 'area:read', 'area_manager:read'])]
+    #[Groups(['user:read', 'user:create', 'user:update'])]
     private ?string $phoneNumber = null;
 
     #[ORM\Column(length: 255, nullable: true)]
@@ -111,7 +115,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     private Collection $orders;
 
     #[ORM\ManyToOne(targetEntity: Client::class, inversedBy: 'users')]
-    #[Groups(['user:read', 'user:create', 'user:update', 'order:read', 'inquiry:read'])]
+    #[Groups(['user:read', 'user:create', 'user:update', 'order:read'])]
     private ?Client $client = null;
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
@@ -127,17 +131,10 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(type: 'datetime', nullable: true)]
     private ?\DateTimeInterface $lastFailedLoginAt = null;
 
-    /**
-     * @var Collection<int, Inquiry>
-     */
-    #[ORM\OneToMany(targetEntity: Inquiry::class, mappedBy: 'user', orphanRemoval: false)]
-    private Collection $inquiries;
-
     public function __construct()
     {
         $this->id = Uuid::v4();
         $this->orders = new ArrayCollection();
-        $this->inquiries = new ArrayCollection();
     }
 
     public function getId(): ?Uuid
@@ -153,6 +150,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setEmail(string $email): static
     {
         $this->email = $email;
+
+        return $this;
+    }
+
+    public function getUsername(): ?string
+    {
+        return $this->username;
+    }
+
+    public function setUsername(?string $username): static
+    {
+        $this->username = $username;
 
         return $this;
     }
@@ -347,36 +356,6 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function hasClient(): bool
     {
         return $this->client !== null;
-    }
-
-    /**
-     * @return Collection<int, Inquiry>
-     */
-    public function getInquiries(): Collection
-    {
-        return $this->inquiries;
-    }
-
-    public function addInquiry(Inquiry $inquiry): static
-    {
-        if (!$this->inquiries->contains($inquiry)) {
-            $this->inquiries->add($inquiry);
-            $inquiry->setUser($this);
-        }
-
-        return $this;
-    }
-
-    public function removeInquiry(Inquiry $inquiry): static
-    {
-        if ($this->inquiries->removeElement($inquiry)) {
-            // set the owning side to null (unless already changed)
-            if ($inquiry->getUser() === $this) {
-                $inquiry->setUser(null);
-            }
-        }
-
-        return $this;
     }
 
     public function getIsActive(): bool

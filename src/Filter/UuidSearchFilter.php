@@ -27,7 +27,7 @@ class UuidSearchFilter extends AbstractFilter
             return;
         }
 
-        // Handle nested properties (e.g., 'inquiry.id')
+        // Handle nested properties (e.g., 'order.id')
         $properties = explode('.', $property);
 
         if (count($properties) === 2) {

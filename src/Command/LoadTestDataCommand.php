@@ -6,8 +6,6 @@ use App\Entity\Client;
 use App\Entity\Country;
 use App\Entity\DeliveryPrice;
 use App\Entity\DeliveryType;
-use App\Entity\Machine;
-use App\Entity\MachineCategory;
 use App\Entity\PaymentType;
 use App\Entity\Product;
 use App\Entity\ProductGroup;
@@ -40,8 +38,7 @@ class LoadTestDataCommand extends Command
     {
         $this
             ->addOption('reset', 'r', InputOption::VALUE_NONE, 'Clear existing test data before loading')
-            ->addOption('skip-products', null, InputOption::VALUE_NONE, 'Skip loading products (use if already imported)')
-            ->addOption('skip-machines', null, InputOption::VALUE_NONE, 'Skip loading machines (use if already imported)');
+            ->addOption('skip-products', null, InputOption::VALUE_NONE, 'Skip loading products (use if already imported)');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -50,7 +47,6 @@ class LoadTestDataCommand extends Command
         $io->title('Loading RECO Test Data');
 
         $skipProducts = $input->getOption('skip-products');
-        $skipMachines = $input->getOption('skip-machines');
 
         try {
             // 1. Load Tax Types
@@ -74,26 +70,15 @@ class LoadTestDataCommand extends Command
             // 7. Load Product Groups
             $productGroups = $this->loadProductGroups($io);
 
-            // 8. Load Machine Categories
-            $machineCategories = $this->loadMachineCategories($io);
-
-            // 9. Load Test Client
+            // 8. Load Test Client
             $client = $this->loadTestClient($io, $countries);
 
-            // 10. Load Test User
+            // 9. Load Test User
             $user = $this->loadTestUser($io, $client);
 
-            // 11. Load Machines (if not skipped)
-            $machines = [];
-            if (!$skipMachines) {
-                $machines = $this->loadMachines($io, $machineCategories);
-            } else {
-                $io->note('Skipping machines (--skip-machines)');
-            }
-
-            // 12. Load Products (if not skipped)
+            // 10. Load Products (if not skipped)
             if (!$skipProducts) {
-                $this->loadProducts($io, $machines);
+                $this->loadProducts($io);
             } else {
                 $io->note('Skipping products (--skip-products)');
             }
@@ -111,10 +96,8 @@ class LoadTestDataCommand extends Command
                     ['Payment Types', count($paymentTypes)],
                     ['Delivery Types', count($deliveryTypes)],
                     ['Product Groups', count($productGroups)],
-                    ['Machine Categories', count($machineCategories)],
                     ['Clients', 1],
                     ['Users', 5],
-                    ['Machines', $skipMachines ? 'skipped' : count($machines)],
                     ['Products', $skipProducts ? 'skipped' : '30'],
                 ]
             );
@@ -136,7 +119,6 @@ class LoadTestDataCommand extends Command
             $io->listing([
                 'Auth: POST /api/login_check {"username": "recouser@starlinger.com", "password": "recouser123!"}',
                 'Products: GET /api/v1/products',
-                'Machines: GET /api/v1/machines',
                 'Countries: GET /api/v1/countries',
                 'Product Groups: GET /api/v1/product_groups',
             ]);
@@ -444,39 +426,6 @@ class LoadTestDataCommand extends Command
         return $groups;
     }
 
-    private function loadMachineCategories(SymfonyStyle $io): array
-    {
-        $io->section('Loading Machine Categories');
-
-        $categoriesData = [
-            ['name' => 'Tape Extrusion Lines', 'code' => 'TEL'],
-            ['name' => 'Circular Looms', 'code' => 'CL'],
-            ['name' => 'Coating Lines', 'code' => 'COAT'],
-            ['name' => 'Printing Machines', 'code' => 'PRINT'],
-            ['name' => 'Conversion Lines', 'code' => 'CONV'],
-            ['name' => 'Recycling Systems', 'code' => 'RECO'],
-        ];
-
-        $categories = [];
-        foreach ($categoriesData as $data) {
-            $existing = $this->entityManager->getRepository(MachineCategory::class)->findOneBy(['name' => $data['name']]);
-            if ($existing) {
-                $categories[$data['code']] = $existing;
-                continue;
-            }
-
-            $category = new MachineCategory();
-            $category->setName($data['name']);
-            $this->entityManager->persist($category);
-            $categories[$data['code']] = $category;
-        }
-
-        $this->entityManager->flush();
-        $io->success(sprintf('Loaded %d machine categories', count($categories)));
-
-        return $categories;
-    }
-
     private function loadTestClient(SymfonyStyle $io, array $countries): Client
     {
         $io->section('Loading Test Client');
@@ -600,72 +549,7 @@ class LoadTestDataCommand extends Command
         return $primaryUser ?? $createdUsers[0];
     }
 
-    private function loadMachines(SymfonyStyle $io, array $categories): array
-    {
-        $io->section('Loading Test Machines');
-
-        $machinesData = [
-            [
-                'articleNumber' => 'TEL-001',
-                'articleDescription' => 'starEX 1500 Tape Extrusion Line',
-                'category' => 'TEL',
-                'ibStationNumber' => 2024001,
-                'kmsIdentificationNumber' => 'KMS-TEL-001',
-            ],
-            [
-                'articleNumber' => 'CL-001',
-                'articleDescription' => 'SL4 Circular Loom',
-                'category' => 'CL',
-                'ibStationNumber' => 2024002,
-                'kmsIdentificationNumber' => 'KMS-CL-001',
-            ],
-            [
-                'articleNumber' => 'RECO-001',
-                'articleDescription' => 'recoSTAR dynamic 165',
-                'category' => 'RECO',
-                'ibStationNumber' => 2024003,
-                'kmsIdentificationNumber' => 'KMS-RECO-001',
-            ],
-            [
-                'articleNumber' => 'CONV-001',
-                'articleDescription' => 'ad*starKON SX Conversion Line',
-                'category' => 'CONV',
-                'ibStationNumber' => 2024004,
-                'kmsIdentificationNumber' => 'KMS-CONV-001',
-            ],
-        ];
-
-        $machines = [];
-        foreach ($machinesData as $data) {
-            $existing = $this->entityManager->getRepository(Machine::class)->findOneBy(['articleNumber' => $data['articleNumber']]);
-            if ($existing) {
-                $machines[] = $existing;
-                continue;
-            }
-
-            $machine = new Machine();
-            $machine->setArticleNumber($data['articleNumber']);
-            $machine->setArticleDescription($data['articleDescription']);
-            $machine->setIbStationNumber($data['ibStationNumber']);
-            $machine->setKmsIdentificationNumber($data['kmsIdentificationNumber']);
-            $machine->setDeliveryDate(new \DateTime('-1 year'));
-            $machine->setMainWarrantyEnd(new \DateTime('+1 year'));
-
-            if (isset($categories[$data['category']])) {
-                $machine->setCategory($categories[$data['category']]);
-            }
-
-            $this->entityManager->persist($machine);
-            $machines[] = $machine;
-        }
-
-        $this->entityManager->flush();
-        $io->success(sprintf('Loaded %d machines', count($machines)));
-
-        return $machines;
-    }
-
-    private function loadProducts(SymfonyStyle $io, array $machines): void
+    private function loadProducts(SymfonyStyle $io): void
     {
         $io->section('Loading Test Products');
 
@@ -704,11 +588,6 @@ class LoadTestDataCommand extends Command
             $product->setWeight(sprintf('%.2f kg', mt_rand(10, 5000) / 100));
             $product->setTechnicalDescription('High-quality replacement part for Starlinger machinery.');
             $product->setStatistic('ET');
-
-            // Add some products to machines
-            if (!empty($machines) && $i < count($machines)) {
-                $product->addMachine($machines[$i]);
-            }
 
             $this->entityManager->persist($product);
             $count++;

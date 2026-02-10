@@ -37,9 +37,6 @@ class DashboardProvider implements ProviderInterface
         $resource = new DashboardResource();
         $resource->period = $data['period'];
         $resource->shopOrders = $data['shopOrders'];
-        $resource->manualInquiries = $data['manualInquiries'];
-        $resource->activeInquiries = $data['activeInquiries'];
-        $resource->cancelledInquiries = $data['cancelledInquiries'];
         $resource->activeCarts = $data['activeCarts'];
         $resource->completedCarts = $data['completedCarts'];
         $resource->totalShopRevenue = $data['totalShopRevenue'];

@@ -238,7 +238,7 @@ class PasswordResetService
         $email = (new TemplatedEmail())
             ->from(sprintf('%s <%s>', $this->mailFromName, $this->mailFromAddress))
             ->to($user->getEmail())
-            ->subject('Password Reset Request - Starlinger Inquiry Tool')
+            ->subject('Password Reset Request - Starlinger RECO')
             ->htmlTemplate('emails/user/password_reset.html.twig')
             ->context([
                 'user' => $user,
@@ -263,7 +263,7 @@ class PasswordResetService
         $email = (new TemplatedEmail())
             ->from(sprintf('%s <%s>', $this->mailFromName, $this->mailFromAddress))
             ->to($admin->getEmail())
-            ->subject('Password Reset Completed - Starlinger Inquiry Tool')
+            ->subject('Password Reset Completed - Starlinger RECO')
             ->htmlTemplate('emails/user/password_reset_completed.html.twig')
             ->context([
                 'admin' => $admin,

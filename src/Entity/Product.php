@@ -32,11 +32,11 @@ use ApiPlatform\OpenApi\Model;
 #[ORM\Index(name: "idx_product_slug", columns: ["slug"])]
 #[ApiResource(
     operations: [
-        new Get(normalizationContext: ['groups' => ['product:read', 'media_item:read', 'machine:read', 'product:machines']]),
+        new Get(normalizationContext: ['groups' => ['product:read', 'media_item:read']]),
         new GetCollection(
             paginationItemsPerPage: 30,
             paginationClientItemsPerPage: true,
-            normalizationContext: ['groups' => ['product:read', 'media_item:read', 'product:machines']]
+            normalizationContext: ['groups' => ['product:read', 'media_item:read']]
         ),
         new GetCollection(
             uriTemplate: '/products/export/excel',
@@ -63,15 +63,15 @@ use ApiPlatform\OpenApi\Model;
             name: 'export_excel'
         ),
         new Post(
-            normalizationContext: ['groups' => ['product:read', 'media_item:read', 'product:machines']],
+            normalizationContext: ['groups' => ['product:read', 'media_item:read']],
             denormalizationContext: ['groups' => ['product:write', 'media_item:write']]
         ),
         new Put(
-            normalizationContext: ['groups' => ['product:read', 'media_item:read', 'product:machines']],
+            normalizationContext: ['groups' => ['product:read', 'media_item:read']],
             denormalizationContext: ['groups' => ['product:write', 'media_item:write']]
         ),
         new Patch(
-            normalizationContext: ['groups' => ['product:read', 'media_item:read', 'product:machines']],
+            normalizationContext: ['groups' => ['product:read', 'media_item:read']],
             denormalizationContext: ['groups' => ['product:write', 'media_item:write']]
         ),
         new Delete()
@@ -85,7 +85,7 @@ use ApiPlatform\OpenApi\Model;
     'slug' => 'exact',
     'name' => 'partial',
     'shortDescription' => 'partial',
-    'machines.articleDescription' => 'partial'
+    'productGroupId' => 'exact',
 ])]
 #[ApiFilter(PropertyFilter::class)]
 class Product
@@ -223,14 +223,6 @@ class Product
     private Collection $documents;
 
     /**
-     * @var Collection<int, Machine>
-     */
-    #[ORM\ManyToMany(targetEntity: Machine::class, mappedBy: 'products')]
-    #[Groups(['product:machines', 'product:write'])]
-    #[ApiProperty(writableLink: true)]
-    private Collection $machines;
-
-    /**
      * @var Collection<int, ClientProductPrice>
      */
     #[ORM\OneToMany(targetEntity: ClientProductPrice::class, mappedBy: 'product', cascade: ['remove'], orphanRemoval: true)]
@@ -241,7 +233,6 @@ class Product
         $this->id = Uuid::v4();
         $this->imageGallery = new ArrayCollection();
         $this->documents = new ArrayCollection();
-        $this->machines = new ArrayCollection();
         $this->clientProductPrices = new ArrayCollection();
     }
 
@@ -593,33 +584,6 @@ class Product
             if ($document->getProductDocument() === $this) {
                 $document->setProductDocument(null);
             }
-        }
-
-        return $this;
-    }
-
-    /**
-     * @return Collection<int, Machine>
-     */
-    public function getMachines(): Collection
-    {
-        return $this->machines;
-    }
-
-    public function addMachine(Machine $machine): static
-    {
-        if (!$this->machines->contains($machine)) {
-            $this->machines->add($machine);
-            $machine->addProduct($this);
-        }
-
-        return $this;
-    }
-
-    public function removeMachine(Machine $machine): static
-    {
-        if ($this->machines->removeElement($machine)) {
-            $machine->removeProduct($this);
         }
 
         return $this;

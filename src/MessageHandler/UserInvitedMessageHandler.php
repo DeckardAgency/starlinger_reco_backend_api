@@ -21,7 +21,7 @@ class UserInvitedMessageHandler
         private readonly Environment $twig,
         private readonly string $clientAppUrl,
         private readonly string $senderEmail = 'noreply@example.com',
-        private readonly string $senderName = 'Starlinger Inquiry Tool'
+        private readonly string $senderName = 'Starlinger RECO'
     ) {
     }
 
@@ -99,7 +99,7 @@ class UserInvitedMessageHandler
             $email = (new Email())
                 ->from(new Address($this->senderEmail, $this->senderName))
                 ->to(new Address($invitation->getEmail(), $invitation->getFullName()))
-                ->subject('You\'ve been invited to Starlinger Inquiry Tool')
+                ->subject('You\'ve been invited to Starlinger RECO')
                 ->html($htmlContent);
 
             $this->logger->info('Sending invitation email', [

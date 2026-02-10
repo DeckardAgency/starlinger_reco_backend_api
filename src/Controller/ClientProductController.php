@@ -121,28 +121,7 @@ class ClientProductController extends AbstractController
 
     private function extractFilters(Request $request): array
     {
-        // Get all query parameters to handle arrays properly
-        $queryParams = $request->query->all();
-
-        // Handle machines.articleDescription (both single and array formats)
-        $machineFilter = null;
-        if (isset($queryParams['machines.articleDescription'])) {
-            $machineFilter = $queryParams['machines.articleDescription'];
-        } elseif (isset($queryParams['machines_articleDescription'])) {
-            $machineFilter = $queryParams['machines_articleDescription'];
-        }
-
-        // Handle both single values and arrays
-        if (is_array($machineFilter)) {
-            $machineArticleDescriptions = array_filter($machineFilter); // Remove empty values
-        } elseif ($machineFilter) {
-            $machineArticleDescriptions = [$machineFilter];
-        } else {
-            $machineArticleDescriptions = [];
-        }
-
         return [
-            'machineArticleDescriptions' => $machineArticleDescriptions, // Changed to plural
             'productName' => $request->query->get('product.name')
                 ?: $request->query->get('product_name'),
             'productPartNo' => $request->query->get('product.partNo')
@@ -180,25 +159,6 @@ class ClientProductController extends AbstractController
             return false;
         }
 
-        // Apply machine article description filter (now supports multiple values)
-        if (!empty($filters['machineArticleDescriptions'])) {
-            $hasMatchingMachine = false;
-            foreach ($product->getMachines() as $machine) {
-                if ($machine->getArticleDescription()) {
-                    // Check if machine matches ANY of the filter values
-                    foreach ($filters['machineArticleDescriptions'] as $filterValue) {
-                        if (stripos($machine->getArticleDescription(), $filterValue) !== false) {
-                            $hasMatchingMachine = true;
-                            break 2; // Break out of both loops
-                        }
-                    }
-                }
-            }
-            if (!$hasMatchingMachine) {
-                return false;
-            }
-        }
-
         return true;
     }
 
@@ -231,7 +191,6 @@ class ClientProductController extends AbstractController
                 'validUntil' => $clientProductPrice->getValidUntil()?->format('Y-m-d\TH:i:sP'),
                 'featuredImage' => $this->formatFeaturedImage($product),
                 'imageGallery' => $this->formatImageGallery($product),
-                'machines' => $this->formatMachines($product),
             ];
         }
 
@@ -276,24 +235,6 @@ class ClientProductController extends AbstractController
         return $gallery;
     }
 
-    private function formatMachines(object $product): array
-    {
-        $machines = [];
-        foreach ($product->getMachines() as $machine) {
-            $machines[] = [
-                '@id' => '/api/v1/machines/' . $machine->getId(),
-                '@type' => 'Machine',
-                'id' => $machine->getId(),
-                'ibStationNumber' => $machine->getIbStationNumber(),
-                'ibSerialNumber' => $machine->getIbSerialNumber(),
-                'articleNumber' => $machine->getArticleNumber(),
-                'articleDescription' => $machine->getArticleDescription(),
-            ];
-        }
-
-        return $machines;
-    }
-
     private function buildResponse(string $clientId, array $formattedProducts, array $allClientPrices, array $filteredClientPrices, array $filters): array
     {
         $response = [
@@ -311,7 +252,6 @@ class ClientProductController extends AbstractController
                 'total_after_filter' => count($filteredClientPrices),
                 'applied_filters' => $filters,
                 'filter_params_detected' => [
-                    'machines.articleDescription' => !empty($filters['machineArticleDescriptions']), // Updated
                     'product.name' => !empty($filters['productName']),
                     'product.partNo' => !empty($filters['productPartNo'])
                 ]
@@ -329,15 +269,9 @@ class ClientProductController extends AbstractController
     {
         return [
             '@type' => 'hydra:IriTemplate',
-            'hydra:template' => '/api/v1/client/' . $clientId . '/products{?machines.articleDescription[],product.name,product.partNo}',
+            'hydra:template' => '/api/v1/client/' . $clientId . '/products{?product.name,product.partNo}',
             'hydra:variableRepresentation' => 'BasicRepresentation',
             'hydra:mapping' => [
-                [
-                    '@type' => 'IriTemplateMapping',
-                    'variable' => 'machines.articleDescription[]',
-                    'property' => 'machines.articleDescription',
-                    'required' => false
-                ],
                 [
                     '@type' => 'IriTemplateMapping',
                     'variable' => 'product.name',

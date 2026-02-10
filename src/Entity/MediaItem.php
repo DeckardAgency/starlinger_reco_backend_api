@@ -127,20 +127,9 @@ class MediaItem
     #[ORM\JoinColumn(onDelete: 'CASCADE')]
     private ?Product $product = null;
 
-    #[ORM\OneToMany(targetEntity: Machine::class, mappedBy: 'featuredImage')]
-    private Collection $machines;
-
-    #[ORM\ManyToOne(inversedBy: 'imageGallery')]
-    #[ORM\JoinColumn(onDelete: 'CASCADE')]
-    private ?Machine $machine = null;
-
     #[ORM\ManyToOne(targetEntity: Product::class, inversedBy: 'documents')]
     #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
     private ?Product $productDocument = null;
-
-    #[ORM\ManyToOne(targetEntity: Machine::class, inversedBy: 'documents')]
-    #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
-    private ?Machine $machineDocument = null;
 
     #[ORM\ManyToOne(targetEntity: Documentation::class, inversedBy: 'media')]
     #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
@@ -163,7 +152,6 @@ class MediaItem
     {
         $this->id = Uuid::v4();
         $this->products = new ArrayCollection();
-        $this->machines = new ArrayCollection();
 
         // Set default values to prevent null values
         $this->filename = "placeholder.jpg";
@@ -287,47 +275,6 @@ class MediaItem
         return $this;
     }
 
-    /**
-     * @return Collection<int, Machine>
-     */
-    public function getMachines(): Collection
-    {
-        return $this->machines;
-    }
-
-    public function addMachine(Machine $machine): static
-    {
-        if (!$this->machines->contains($machine)) {
-            $this->machines->add($machine);
-            $machine->setFeaturedImage($this);
-        }
-
-        return $this;
-    }
-
-    public function removeMachine(Machine $machine): static
-    {
-        if ($this->machines->removeElement($machine)) {
-            if ($machine->getFeaturedImage() === $this) {
-                $machine->setFeaturedImage(null);
-            }
-        }
-
-        return $this;
-    }
-
-    public function getMachine(): ?Machine
-    {
-        return $this->machine;
-    }
-
-    public function setMachine(?Machine $machine): static
-    {
-        $this->machine = $machine;
-
-        return $this;
-    }
-
     public function getProductDocument(): ?Product
     {
         return $this->productDocument;
@@ -336,18 +283,6 @@ class MediaItem
     public function setProductDocument(?Product $productDocument): static
     {
         $this->productDocument = $productDocument;
-
-        return $this;
-    }
-
-    public function getMachineDocument(): ?Machine
-    {
-        return $this->machineDocument;
-    }
-
-    public function setMachineDocument(?Machine $machineDocument): static
-    {
-        $this->machineDocument = $machineDocument;
 
         return $this;
     }

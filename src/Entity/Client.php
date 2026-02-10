@@ -64,18 +64,18 @@ class Client
 {
     #[ORM\Id]
     #[ORM\Column(type: "uuid", unique: true)]
-    #[Groups(['client:read', 'user:read', 'installed_base:read', 'area_manager:read', 'order:read', 'inquiry:read'])]
+    #[Groups(['client:read', 'user:read', 'order:read'])]
     private ?Uuid $id = null;
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank]
-    #[Groups(['client:read', 'client:write', 'user:read', 'installed_base:read', 'order:read', 'inquiry:read'])]
+    #[Groups(['client:read', 'client:write', 'user:read', 'order:read'])]
     private ?string $name = null;
 
     #[ORM\Column(length: 50, unique: true)]
     #[Assert\NotBlank]
     #[Assert\Length(min: 2, max: 50)]
-    #[Groups(['client:read', 'client:write', 'user:read', 'installed_base:read', 'order:read', 'inquiry:read'])]
+    #[Groups(['client:read', 'client:write', 'user:read', 'order:read'])]
     private ?string $code = null;
 
     #[ORM\Column(type: "text", nullable: true)]
@@ -98,6 +98,31 @@ class Client
     #[ORM\Column(length: 50, nullable: true)]
     #[Groups(['client:read', 'client:write'])]
     private ?string $vatNumber = null;
+
+    #[ORM\Column(type: "decimal", precision: 12, scale: 2, nullable: true)]
+    #[Groups(['client:read', 'client:write'])]
+    private ?string $purchaseLimit = null;
+
+    #[ORM\Column(type: "decimal", precision: 12, scale: 2, nullable: true)]
+    #[Groups(['client:read', 'client:write'])]
+    private ?string $amountSpent = null;
+
+    #[ORM\Column(length: 20, nullable: true)]
+    #[Groups(['client:read', 'client:write'])]
+    private ?string $otherPhone = null;
+
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Assert\Email]
+    #[Groups(['client:read', 'client:write'])]
+    private ?string $otherEmail = null;
+
+    #[ORM\Column(length: 20, nullable: true)]
+    #[Groups(['client:read', 'client:write'])]
+    private ?string $fax = null;
+
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Groups(['client:read', 'client:write'])]
+    private ?string $web = null;
 
     #[ORM\Column(type: "datetime")]
     #[Gedmo\Timestampable(on: "create")]
@@ -125,21 +150,6 @@ class Client
     private Collection $productPrices;
 
     /**
-     * @var Collection<int, ClientMachineInstalledBase>
-     */
-    #[ORM\OneToMany(targetEntity: ClientMachineInstalledBase::class, mappedBy: 'client', cascade: ['persist', 'remove'], orphanRemoval: true)]
-    #[Groups(['client:read:details'])]
-    #[ApiProperty(readableLink: false, writableLink: false)]
-    private Collection $installedBaseRelations;
-
-    /**
-     * Cached count of machines - updated via console command
-     */
-    #[ORM\Column(type: 'integer', options: ['default' => 0])]
-    #[Groups(['client:read'])]
-    private int $machinesCount = 0;
-
-    /**
      * Maximum number of active users allowed for this client
      * Null means unlimited active users
      */
@@ -149,11 +159,11 @@ class Client
     private ?int $maxActiveUsers = null;
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
-    #[Groups(['client:read', 'client:write', 'user:read', 'order:read', 'inquiry:read'])]
+    #[Groups(['client:read', 'client:write', 'user:read', 'order:read'])]
     private bool $isActive = true;
 
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
-    #[Groups(['client:read', 'client:write', 'user:read', 'order:read', 'inquiry:read'])]
+    #[Groups(['client:read', 'client:write', 'user:read', 'order:read'])]
     private bool $isArchived = false;
 
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
@@ -170,13 +180,6 @@ class Client
     private ?AccountGroup $accountGroup = null;
 
     /**
-     * @var Collection<int, Area>
-     */
-    #[ORM\OneToMany(targetEntity: Area::class, mappedBy: 'client', cascade: ['persist', 'remove'], orphanRemoval: true)]
-    #[Groups(['client:read:details'])]
-    private Collection $areas;
-
-    /**
      * @var Collection<int, Address>
      */
     #[ORM\OneToMany(targetEntity: Address::class, mappedBy: 'client', cascade: ['persist', 'remove'], orphanRemoval: true)]
@@ -189,8 +192,6 @@ class Client
         $this->id = Uuid::v4();
         $this->users = new ArrayCollection();
         $this->productPrices = new ArrayCollection();
-        $this->installedBaseRelations = new ArrayCollection();
-        $this->areas = new ArrayCollection();
         $this->addresses = new ArrayCollection();
     }
 
@@ -273,6 +274,72 @@ class Client
     public function setVatNumber(?string $vatNumber): static
     {
         $this->vatNumber = $vatNumber;
+        return $this;
+    }
+
+    public function getPurchaseLimit(): ?string
+    {
+        return $this->purchaseLimit;
+    }
+
+    public function setPurchaseLimit(?string $purchaseLimit): static
+    {
+        $this->purchaseLimit = $purchaseLimit;
+        return $this;
+    }
+
+    public function getAmountSpent(): ?string
+    {
+        return $this->amountSpent;
+    }
+
+    public function setAmountSpent(?string $amountSpent): static
+    {
+        $this->amountSpent = $amountSpent;
+        return $this;
+    }
+
+    public function getOtherPhone(): ?string
+    {
+        return $this->otherPhone;
+    }
+
+    public function setOtherPhone(?string $otherPhone): static
+    {
+        $this->otherPhone = $otherPhone;
+        return $this;
+    }
+
+    public function getOtherEmail(): ?string
+    {
+        return $this->otherEmail;
+    }
+
+    public function setOtherEmail(?string $otherEmail): static
+    {
+        $this->otherEmail = $otherEmail;
+        return $this;
+    }
+
+    public function getFax(): ?string
+    {
+        return $this->fax;
+    }
+
+    public function setFax(?string $fax): static
+    {
+        $this->fax = $fax;
+        return $this;
+    }
+
+    public function getWeb(): ?string
+    {
+        return $this->web;
+    }
+
+    public function setWeb(?string $web): static
+    {
+        $this->web = $web;
         return $this;
     }
 
@@ -360,44 +427,6 @@ class Client
             }
         }
         return null;
-    }
-
-    /**
-     * @return Collection<int, ClientMachineInstalledBase>
-     */
-    public function getInstalledBaseRelations(): Collection
-    {
-        return $this->installedBaseRelations;
-    }
-
-    public function addInstalledBaseRelation(ClientMachineInstalledBase $relation): static
-    {
-        if (!$this->installedBaseRelations->contains($relation)) {
-            $this->installedBaseRelations->add($relation);
-            $relation->setClient($this);
-        }
-        return $this;
-    }
-
-    public function removeInstalledBaseRelation(ClientMachineInstalledBase $relation): static
-    {
-        if ($this->installedBaseRelations->removeElement($relation)) {
-            if ($relation->getClient() === $this) {
-                $relation->setClient(null);
-            }
-        }
-        return $this;
-    }
-
-    public function getMachinesCount(): int
-    {
-        return $this->machinesCount;
-    }
-
-    public function setMachinesCount(int $machinesCount): static
-    {
-        $this->machinesCount = $machinesCount;
-        return $this;
     }
 
     public function getIsActive(): bool
@@ -497,33 +526,6 @@ class Client
         }
 
         return $this->countActiveUsers() < $this->maxActiveUsers;
-    }
-
-    /**
-     * @return Collection<int, Area>
-     */
-    public function getAreas(): Collection
-    {
-        return $this->areas;
-    }
-
-    public function addArea(Area $area): static
-    {
-        if (!$this->areas->contains($area)) {
-            $this->areas->add($area);
-            $area->setClient($this);
-        }
-        return $this;
-    }
-
-    public function removeArea(Area $area): static
-    {
-        if ($this->areas->removeElement($area)) {
-            if ($area->getClient() === $this) {
-                $area->setClient(null);
-            }
-        }
-        return $this;
     }
 
     /**

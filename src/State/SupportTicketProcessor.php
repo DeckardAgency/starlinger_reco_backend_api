@@ -160,8 +160,8 @@ class SupportTicketProcessor implements ProcessorInterface
             "Submitted by: %s (%s)\n\n" .
             "Message:\n%s\n\n" .
             "---\n" .
-            "Order/Inquiry ID: %s\n" .
-            "Machine/Product: %s\n" .
+            "Order ID: %s\n" .
+            "Product: %s\n" .
             "Attachment: %s\n\n" .
             "Created at: %s",
             $ticket->getId(),
