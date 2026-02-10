@@ -37,33 +37,11 @@ services:
             $senderEmail: '%env(ORDER_SENDER_EMAIL)%'
             $twig: '@twig'
 
-    # Inquiry message handlers
-    App\MessageHandler\InquiryCreatedMessageHandler:
-        arguments:
-            $adminEmail: '%env(INQUIRY_ADMIN_EMAIL)%'
-            $senderEmail: '%env(INQUIRY_SENDER_EMAIL)%'
-            $twig: '@twig'
-
-    App\MessageHandler\InquiryStatusChangedMessageHandler:
-        arguments:
-            $adminEmail: '%env(INQUIRY_ADMIN_EMAIL)%'
-            $senderEmail: '%env(INQUIRY_SENDER_EMAIL)%'
-            $twig: '@twig'
-
-    # Part Info Request message handler
-    App\MessageHandler\InquiryPartInfoRequestMessageHandler:
-        arguments:
-            $adminEmail: '%env(INQUIRY_ADMIN_EMAIL)%'
-            $senderEmail: '%env(INQUIRY_SENDER_EMAIL)%'
-            $clientAppUrl: '%app.client_url%'
-            $adminAppUrl: '%env(ADMIN_APP_URL)%'
-            $twig: '@twig'
-
     # User invitation message handler
     App\MessageHandler\UserInvitedMessageHandler:
         arguments:
             $clientAppUrl: '%app.client_url%'
-            $senderEmail: '%env(INQUIRY_SENDER_EMAIL)%'
+            $senderEmail: '%env(ORDER_SENDER_EMAIL)%'
             $senderName: 'Starlinger RECO'
             $twig: '@twig'
 
@@ -123,19 +101,6 @@ services:
             $logger: '@logger'
         tags: [ 'api_platform.state_processor' ]
 
-    App\State\InquiryDraftProvider:
-        arguments:
-            $security: '@security.helper'
-            $inquiryRepository: '@App\Repository\InquiryRepository'
-        tags: [ 'api_platform.state_provider' ]
-
-    App\State\Processor\InquiryDraftProcessor:
-        arguments:
-            $entityManager: '@doctrine.orm.entity_manager'
-            $security: '@security.helper'
-            $logger: '@logger'
-        tags: [ 'api_platform.state_processor' ]
-
     App\Service\DashboardService:
         autowire: true
         autoconfigure: true
@@ -152,28 +117,6 @@ services:
         arguments:
             $loginLimiter: '@limiter.login'
 
-    # Area Assignment Strategies
-    App\Service\AreaAssignment\Strategy\CriteriaMatchStrategy:
-        tags: ['area.assignment.strategy']
-
-    App\Service\AreaAssignment\Strategy\RoundRobinStrategy:
-        tags: ['area.assignment.strategy']
-
-    App\Service\AreaAssignment\Strategy\LoadBalancedStrategy:
-        tags: ['area.assignment.strategy']
-
-    App\Service\AreaAssignment\Strategy\AvailabilityStrategy:
-        tags: ['area.assignment.strategy']
-
-    App\Service\AreaAssignment\Strategy\HybridStrategy:
-        tags: ['area.assignment.strategy']
-        arguments:
-            $strategies: !tagged_iterator area.assignment.strategy
-
-    App\Service\AreaAssignmentService:
-        arguments:
-            $strategies: !tagged_iterator area.assignment.strategy
-
     # Custom UUID filter for API Platform
     App\Filter\UuidSearchFilter:
         tags: ['api_platform.filter']
@@ -182,5 +125,5 @@ services:
     App\Service\PasswordResetService:
         arguments:
             $clientAppUrl: '%app.client_url%'
-            $mailFromAddress: '%env(INQUIRY_SENDER_EMAIL)%'
+            $mailFromAddress: '%env(ORDER_SENDER_EMAIL)%'
             $mailFromName: 'Starlinger RECO'

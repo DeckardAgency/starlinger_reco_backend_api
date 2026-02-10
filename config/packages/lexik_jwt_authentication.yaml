@@ -17,4 +17,5 @@ lexik_jwt_authentication:
             name: Authorization
 
     # User ID claim configuration
-    user_id_claim: username # This will use the email field as it matches getUserIdentifier()
+    # Uses the 'email' property accessor (getEmail()) to populate the JWT claim
+    user_id_claim: email

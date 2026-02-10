@@ -1,47 +1,5 @@
 framework:
     workflows:
-        inquiry:
-            type: 'state_machine'
-            audit_trail:
-                enabled: true
-            marking_store:
-                type: 'method'
-                property: 'status'
-            supports:
-                - App\Entity\Inquiry
-            initial_marking: draft
-            places:
-                - draft
-                - submitted
-                - in_review
-                - more_info
-                - information_provided
-                - in_progress
-                - completed
-                - canceled
-            transitions:
-                submit:
-                    from: draft
-                    to: submitted
-                review:
-                    from: submitted
-                    to: in_review
-                request_more_info:
-                    from: [submitted, in_review, information_provided]
-                    to: more_info
-                provide_information:
-                    from: more_info
-                    to: information_provided
-                start_progress:
-                    from: [submitted, in_review, information_provided]
-                    to: in_progress
-                complete:
-                    from: in_progress
-                    to: completed
-                cancel:
-                    from: [draft, submitted, in_review, more_info, information_provided, in_progress]
-                    to: canceled
-
         order:
             type: 'state_machine'
             audit_trail:
