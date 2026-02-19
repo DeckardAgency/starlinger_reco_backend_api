@@ -11,7 +11,6 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Serializer\SerializerInterface;
-use Symfony\Component\Uid\Uuid;
 use Doctrine\ORM\EntityManagerInterface;
 
 #[Route('/api/v1')]
@@ -99,7 +98,7 @@ class ClientProductController extends AbstractController
 
     private function findClientOrThrow(string $clientId): object
     {
-        $client = $this->clientRepository->find(Uuid::fromString($clientId));
+        $client = $this->clientRepository->find((int) $clientId);
 
         if (!$client) {
             throw new \RuntimeException('Client not found');
@@ -110,7 +109,7 @@ class ClientProductController extends AbstractController
 
     private function findProductOrThrow(string $productId): object
     {
-        $product = $this->productRepository->find(Uuid::fromString($productId));
+        $product = $this->productRepository->find((int) $productId);
 
         if (!$product) {
             throw new \RuntimeException('Product not found');

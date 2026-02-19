@@ -7,7 +7,6 @@ use App\Entity\Product;
 use App\Entity\Order;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<OrderItem>
@@ -27,10 +26,10 @@ class OrderItemRepository extends ServiceEntityRepository
     /**
      * Find all items for a specific order
      *
-     * @param Uuid|Order $order
+     * @param int|Order $order
      * @return OrderItem[]
      */
-    public function findByOrder(Uuid|Order $order): array
+    public function findByOrder(int|Order $order): array
     {
         if ($order instanceof Order) {
             $order = $order->getId();
@@ -42,10 +41,10 @@ class OrderItemRepository extends ServiceEntityRepository
     /**
      * Find all order items for a specific product
      *
-     * @param Uuid|Product $product
+     * @param int|Product $product
      * @return OrderItem[]
      */
-    public function findByProduct(Uuid|Product $product): array
+    public function findByProduct(int|Product $product): array
     {
         if ($product instanceof Product) {
             $product = $product->getId();
@@ -57,7 +56,7 @@ class OrderItemRepository extends ServiceEntityRepository
     /**
      * Count how many times a product has been ordered
      */
-    public function countProductOrders(Uuid|Product $product): int
+    public function countProductOrders(int|Product $product): int
     {
         if ($product instanceof Product) {
             $product = $product->getId();
@@ -69,7 +68,7 @@ class OrderItemRepository extends ServiceEntityRepository
     /**
      * Calculate total quantity sold for a product
      */
-    public function getTotalQuantitySold(Uuid|Product $product): int
+    public function getTotalQuantitySold(int|Product $product): int
     {
         if ($product instanceof Product) {
             $product = $product->getId();
@@ -80,7 +79,7 @@ class OrderItemRepository extends ServiceEntityRepository
             ->join('i.orderRef', 'o')
             ->andWhere('i.product = :product')
             ->andWhere('o.status != :canceledStatus')
-            ->setParameter('product', $product, 'uuid')
+            ->setParameter('product', $product)
             ->setParameter('canceledStatus', Order::STATUS_CANCELED)
             ->getQuery()
             ->getSingleScalarResult();

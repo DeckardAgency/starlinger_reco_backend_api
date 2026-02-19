@@ -155,7 +155,7 @@ class DocumentationMediaController extends AbstractController
 
         $mediaItem = null;
         foreach ($documentation->getMedia() as $media) {
-            if ($media->getId()->toRfc4122() === $mediaId) {
+            if ($media->getId() === (int) $mediaId) {
                 $mediaItem = $media;
                 break;
             }

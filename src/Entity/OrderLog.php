@@ -8,7 +8,6 @@ use ApiPlatform\Metadata\GetCollection;
 use App\Repository\OrderLogRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
-use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 
 #[ORM\Entity(repositoryClass: OrderLogRepository::class)]
@@ -30,9 +29,10 @@ use Gedmo\Mapping\Annotation as Gedmo;
 class OrderLog
 {
     #[ORM\Id]
-    #[ORM\Column(type: 'uuid', unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['order_log:read', 'order:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\ManyToOne(targetEntity: Order::class, inversedBy: 'logs')]
     #[ORM\JoinColumn(nullable: false)]
@@ -67,12 +67,18 @@ class OrderLog
 
     public function __construct()
     {
-        $this->id = Uuid::v4();
     }
 
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+
+        return $this;
     }
 
     public function getOrder(): ?Order

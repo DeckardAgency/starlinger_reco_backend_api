@@ -64,11 +64,11 @@ class PasswordResetService
         $this->sendPasswordResetEmail($token);
 
         $this->logger->info('Password reset requested', [
-            'user_id' => $user->getId()->toRfc4122(),
+            'user_id' => $user->getId(),
             'user_email' => $user->getEmail(),
-            'admin_id' => $admin->getId()->toRfc4122(),
+            'admin_id' => $admin->getId(),
             'admin_email' => $admin->getEmail(),
-            'token_id' => $token->getId()->toRfc4122(),
+            'token_id' => $token->getId(),
             'expires_at' => $token->getExpiresAt()->format('Y-m-d H:i:s'),
         ]);
 
@@ -128,9 +128,9 @@ class PasswordResetService
         $this->sendPasswordResetEmail($token);
 
         $this->logger->info('Self-service password reset requested', [
-            'user_id' => $user->getId()->toRfc4122(),
+            'user_id' => $user->getId(),
             'user_email' => $user->getEmail(),
-            'token_id' => $token->getId()->toRfc4122(),
+            'token_id' => $token->getId(),
             'expires_at' => $token->getExpiresAt()->format('Y-m-d H:i:s'),
             'ip_address' => $ipAddress,
         ]);
@@ -214,9 +214,9 @@ class PasswordResetService
         $this->entityManager->flush();
 
         $this->logger->info('Password reset completed', [
-            'user_id' => $user->getId()->toRfc4122(),
+            'user_id' => $user->getId(),
             'user_email' => $user->getEmail(),
-            'token_id' => $token->getId()->toRfc4122(),
+            'token_id' => $token->getId(),
         ]);
 
         // Send notification to admin who initiated the reset
@@ -250,7 +250,7 @@ class PasswordResetService
         $this->mailer->send($email);
 
         $this->logger->info('Password reset email sent', [
-            'user_id' => $user->getId()->toRfc4122(),
+            'user_id' => $user->getId(),
             'user_email' => $user->getEmail(),
         ]);
     }
@@ -274,9 +274,9 @@ class PasswordResetService
         $this->mailer->send($email);
 
         $this->logger->info('Admin notification email sent for password reset completion', [
-            'admin_id' => $admin->getId()->toRfc4122(),
+            'admin_id' => $admin->getId(),
             'admin_email' => $admin->getEmail(),
-            'user_id' => $user->getId()->toRfc4122(),
+            'user_id' => $user->getId(),
             'user_email' => $user->getEmail(),
         ]);
     }

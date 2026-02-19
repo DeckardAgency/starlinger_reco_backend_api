@@ -56,7 +56,7 @@ class OrderWorkflowSubscriber implements EventSubscriberInterface
         $modifiedBy = null;
         if ($user instanceof User) {
             $modifiedBy = [
-                'id' => $user->getId()->toRfc4122(),
+                'id' => $user->getId(),
                 'email' => $user->getEmail(),
                 'fullName' => $user->getFullName(),
                 'firstName' => $user->getFirstName(),
@@ -65,7 +65,7 @@ class OrderWorkflowSubscriber implements EventSubscriberInterface
         }
 
         $this->logger->info('Order workflow transition completed', [
-            'order_id' => $order->getId()->toRfc4122(),
+            'order_id' => $order->getId(),
             'order_number' => $order->getOrderNumber(),
             'transition' => $transition->getName(),
             'old_status' => $oldStatus,
@@ -89,7 +89,7 @@ class OrderWorkflowSubscriber implements EventSubscriberInterface
         $this->messageBus->dispatch($message);
 
         $this->logger->info('OrderStatusChangedMessage dispatched', [
-            'order_id' => $order->getId()->toRfc4122(),
+            'order_id' => $order->getId(),
             'new_status' => $newStatus
         ]);
     }
@@ -111,8 +111,7 @@ class OrderWorkflowSubscriber implements EventSubscriberInterface
                     $event->setBlocked(true, 'Cannot dispatch order without shipping address');
 
                     $this->logger->warning('Order dispatch blocked - missing shipping address', [
-                        'order_id' => $order->getId()->toRfc4122()
-                    ]);
+                        'order_id' => $order->getId()                    ]);
                 }
                 break;
 

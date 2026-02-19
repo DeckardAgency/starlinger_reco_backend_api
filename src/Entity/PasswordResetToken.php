@@ -6,7 +6,6 @@ use App\Repository\PasswordResetTokenRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
-use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: PasswordResetTokenRepository::class)]
 #[ORM\Table(name: 'password_reset_token')]
@@ -32,8 +31,9 @@ class PasswordResetToken
     public const DEFAULT_EXPIRATION_HOURS = 1;
 
     #[ORM\Id]
-    #[ORM\Column(type: 'uuid', unique: true)]
-    private ?Uuid $id = null;
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
+    private ?int $id = null;
 
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
@@ -64,14 +64,19 @@ class PasswordResetToken
 
     public function __construct()
     {
-        $this->id = Uuid::v4();
         $this->generateToken();
         $this->setDefaultExpiration();
     }
 
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+        return $this;
     }
 
     public function getUser(): ?User

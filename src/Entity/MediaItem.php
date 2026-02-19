@@ -20,7 +20,6 @@ use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\HttpFoundation\File\File;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
-use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 
 #[ORM\Entity(repositoryClass: MediaItemRepository::class)]
@@ -63,9 +62,10 @@ use Gedmo\Mapping\Annotation as Gedmo;
 class MediaItem
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['media_item:read', 'documentation:read', 'documentation:item', 'payment_type:read', 'delivery_type:read', 'warehouse:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank(groups: ['media_item:write', 'media_item:create'])]
@@ -150,7 +150,6 @@ class MediaItem
 
     public function __construct()
     {
-        $this->id = Uuid::v4();
         $this->products = new ArrayCollection();
 
         // Set default values to prevent null values
@@ -164,9 +163,16 @@ class MediaItem
         return $this->filename ?? 'New Media Item';
     }
 
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+
+        return $this;
     }
 
     public function getFilename(): ?string

@@ -14,7 +14,6 @@ use ApiPlatform\Metadata\Put;
 use App\Repository\ProductProductLinkRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
-use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 
 #[ApiResource(
@@ -51,17 +50,18 @@ use Gedmo\Mapping\Annotation as Gedmo;
 class ProductProductLink
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['product_link:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
-    #[ORM\Column(name: 'parent_product_id', type: 'string', length: 36)]
+    #[ORM\Column(name: 'parent_product_id', type: 'integer', nullable: true)]
     #[Groups(['product_link:read', 'product_link:write'])]
-    private ?string $parentProductId = null;
+    private ?int $parentProductId = null;
 
-    #[ORM\Column(name: 'child_product_id', type: 'string', length: 36)]
+    #[ORM\Column(name: 'child_product_id', type: 'integer', nullable: true)]
     #[Groups(['product_link:read', 'product_link:write'])]
-    private ?string $childProductId = null;
+    private ?int $childProductId = null;
 
     #[ORM\Column(name: 'relation_type_id', type: 'integer', nullable: true, options: ['unsigned' => true])]
     #[Groups(['product_link:read', 'product_link:write'])]
@@ -81,33 +81,34 @@ class ProductProductLink
     #[Groups(['product_link:read'])]
     private ?\DateTimeInterface $updatedAt = null;
 
-    public function __construct()
-    {
-        $this->id = Uuid::v4();
-    }
-
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
     }
 
-    public function getParentProductId(): ?string
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+        return $this;
+    }
+
+    public function getParentProductId(): ?int
     {
         return $this->parentProductId;
     }
 
-    public function setParentProductId(?string $parentProductId): static
+    public function setParentProductId(?int $parentProductId): static
     {
         $this->parentProductId = $parentProductId;
         return $this;
     }
 
-    public function getChildProductId(): ?string
+    public function getChildProductId(): ?int
     {
         return $this->childProductId;
     }
 
-    public function setChildProductId(?string $childProductId): static
+    public function setChildProductId(?int $childProductId): static
     {
         $this->childProductId = $childProductId;
         return $this;

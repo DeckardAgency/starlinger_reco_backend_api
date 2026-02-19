@@ -12,7 +12,6 @@ use ApiPlatform\Metadata\Put;
 use Doctrine\ORM\Mapping as ORM;
 use App\Repository\ClientProductPriceRepository;
 use Symfony\Component\Serializer\Annotation\Groups;
-use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
@@ -55,9 +54,10 @@ use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 class ClientProductPrice
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['client_product_price:read', 'client:read:details', 'client_product:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\ManyToOne(targetEntity: Client::class, inversedBy: 'productPrices')]
     #[ORM\JoinColumn(nullable: false)]
@@ -99,15 +99,21 @@ class ClientProductPrice
 
     public function __construct()
     {
-        $this->id = Uuid::v4();
     }
 
     // Rest of methods remain the same...
     // (All the getters and setters)
 
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+
+        return $this;
     }
 
     public function getClient(): ?Client

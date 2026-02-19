@@ -37,7 +37,7 @@ class InvitationVerifyProvider implements ProviderInterface
         }
 
         $this->logger->info('Invitation found', [
-            'invitation_id' => $invitation->getId()->toRfc4122(),
+            'invitation_id' => $invitation->getId(),
             'email' => $invitation->getEmail(),
             'status' => $invitation->getStatus(),
             'is_expired' => $invitation->isExpired()

@@ -27,8 +27,6 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Serializer\Annotation\Groups;
-use Symfony\Component\Uid\Uuid;
-
 #[ORM\Entity(repositoryClass: OrderRepository::class)]
 #[ORM\Table(name: '`order`')]
 #[ORM\Index(name: "idx_order_status", columns: ["status"])]
@@ -163,9 +161,10 @@ class Order
     public const STATUS_CANCELED = 'canceled';
 
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['order:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\Column(length: 50)]
     #[Groups(['order:read'])]
@@ -269,7 +268,6 @@ class Order
 
     public function __construct()
     {
-        $this->id = Uuid::v4();
         $this->items = new ArrayCollection();
         $this->orderNumber = $this->generateOrderNumber();
         $this->lastSavedAt = new \DateTime();
@@ -282,9 +280,16 @@ class Order
         return 'ORD-' . strtoupper(substr(uniqid(), -8));
     }
 
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+
+        return $this;
     }
 
     public function getOrderNumber(): ?string

@@ -13,7 +13,6 @@ use App\Repository\OrderItemRepository;
 use DateTimeInterface;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
-use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use ApiPlatform\Metadata\ApiProperty;
 
@@ -46,9 +45,10 @@ use ApiPlatform\Metadata\ApiProperty;
 class OrderItem
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['order_item:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\ManyToOne(targetEntity: Order::class, inversedBy: 'items')]
     #[ORM\JoinColumn(nullable: false)]
@@ -90,12 +90,18 @@ class OrderItem
 
     public function __construct()
     {
-        $this->id = Uuid::v4();
     }
 
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+
+        return $this;
     }
 
     public function getOrderRef(): ?Order

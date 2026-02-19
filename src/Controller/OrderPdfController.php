@@ -9,7 +9,6 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Symfony\Component\Uid\Uuid;
 use Twig\Environment;
 
 #[AsController]
@@ -24,15 +23,14 @@ class OrderPdfController extends AbstractController
 
     public function __invoke(string $id): Response
     {
-        // Validate UUID
-        try {
-            $uuid = Uuid::fromString($id);
-        } catch (\InvalidArgumentException $e) {
+        // Validate ID is numeric
+        $orderId = (int) $id;
+        if ($orderId <= 0) {
             throw new NotFoundHttpException('Invalid order ID format');
         }
 
         // Find the order
-        $order = $this->orderRepository->find($uuid);
+        $order = $this->orderRepository->find($orderId);
 
         if (!$order) {
             throw new NotFoundHttpException('Order not found');

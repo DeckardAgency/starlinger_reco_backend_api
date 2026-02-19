@@ -96,10 +96,9 @@ class Contact
     #[Groups(['contact:read', 'contact:write'])]
     private ?string $description = null;
 
-    // Account ID is a UUID string (references client.id which is binary(16)/UUID)
-    #[ORM\Column(name: 'account_id', type: 'string', length: 36, nullable: true)]
+    #[ORM\Column(name: 'account_id', type: 'integer', nullable: true)]
     #[Groups(['contact:read', 'contact:write'])]
-    private ?string $accountId = null;
+    private ?int $accountId = null;
 
     #[ORM\Column(name: 'title_id', type: 'integer', nullable: true, options: ['unsigned' => true])]
     #[Groups(['contact:read', 'contact:write'])]
@@ -282,12 +281,12 @@ class Contact
         return $this;
     }
 
-    public function getAccountId(): ?string
+    public function getAccountId(): ?int
     {
         return $this->accountId;
     }
 
-    public function setAccountId(?string $accountId): static
+    public function setAccountId(?int $accountId): static
     {
         $this->accountId = $accountId;
         return $this;

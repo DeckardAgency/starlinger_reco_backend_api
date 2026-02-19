@@ -2,17 +2,15 @@
 
 namespace App\Message;
 
-use Symfony\Component\Uid\Uuid;
-
 class OrderCreatedMessage
 {
-    private Uuid $orderId;
+    private int $orderId;
     private ?\DateTimeInterface $createdAt;
     private ?string $messageId;
     private ?array $metadata;
 
     public function __construct(
-        Uuid $orderId,
+        int $orderId,
         ?\DateTimeInterface $createdAt = null,
         ?array $metadata = null
     ) {
@@ -22,7 +20,7 @@ class OrderCreatedMessage
         $this->metadata = $metadata;
     }
 
-    public function getOrderId(): Uuid
+    public function getOrderId(): int
     {
         return $this->orderId;
     }

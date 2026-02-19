@@ -117,9 +117,15 @@ services:
         arguments:
             $loginLimiter: '@limiter.login'
 
-    # Custom UUID filter for API Platform
-    App\Filter\UuidSearchFilter:
-        tags: ['api_platform.filter']
+    # Production data investigation/migration commands
+    App\Command\InvestigateProductionDataCommand:
+        arguments:
+            $legacyConnection: '@doctrine.dbal.legacy_connection'
+
+    App\Command\ImportProductionDataCommand:
+        arguments:
+            $legacyConnection: '@doctrine.dbal.legacy_connection'
+            $entityManager: '@doctrine.orm.entity_manager'
 
     # Password Reset Service
     App\Service\PasswordResetService:

@@ -20,7 +20,6 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Serializer\Annotation\SerializedName;
-use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -62,9 +61,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 class Documentation
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['documentation:read', 'documentation_revision:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\Column(length: 255)]
     #[Groups(['documentation:read', 'documentation:write'])]
@@ -121,7 +121,6 @@ class Documentation
 
     public function __construct()
     {
-        $this->id = Uuid::v4();
         $this->revisions = new ArrayCollection();
         $this->media = new ArrayCollection();
     }
@@ -131,9 +130,16 @@ class Documentation
         return $this->title ?? 'New Documentation';
     }
 
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+
+        return $this;
     }
 
     public function getTitle(): ?string

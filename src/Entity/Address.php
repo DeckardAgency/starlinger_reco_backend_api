@@ -16,7 +16,6 @@ use ApiPlatform\Metadata\Put;
 use App\Repository\AddressRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
-use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -73,9 +72,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 class Address
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['address:read', 'client:read', 'client:read:details'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\ManyToOne(targetEntity: Client::class, inversedBy: 'addresses')]
     #[ORM\JoinColumn(nullable: false)]
@@ -138,12 +138,18 @@ class Address
 
     public function __construct()
     {
-        $this->id = Uuid::v4();
     }
 
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+
+        return $this;
     }
 
     public function getClient(): ?Client

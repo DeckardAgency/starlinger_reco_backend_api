@@ -11,7 +11,6 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
-use Symfony\Component\Uid\Uuid;
 
 class OrderDraftController extends AbstractController
 {
@@ -44,9 +43,8 @@ class OrderDraftController extends AbstractController
     {
         $user = $this->getUser();
 
-        try {
-            $orderId = Uuid::fromString($id);
-        } catch (\InvalidArgumentException $e) {
+        $orderId = (int) $id;
+        if ($orderId <= 0) {
             return $this->json(['error' => 'Invalid order ID format'], Response::HTTP_BAD_REQUEST);
         }
 
@@ -57,7 +55,7 @@ class OrderDraftController extends AbstractController
         }
 
         // Check if the order belongs to the current user
-        if ($order->getUser()->getId()->toRfc4122() !== $user->getId()->toRfc4122()) {
+        if ($order->getUser()->getId() !== $user->getId()) {
             return $this->json(['error' => 'You do not have permission to modify this order'], Response::HTTP_FORBIDDEN);
         }
 
@@ -76,9 +74,8 @@ class OrderDraftController extends AbstractController
     {
         $user = $this->getUser();
 
-        try {
-            $orderId = Uuid::fromString($id);
-        } catch (\InvalidArgumentException $e) {
+        $orderId = (int) $id;
+        if ($orderId <= 0) {
             return $this->json(['error' => 'Invalid order ID format'], Response::HTTP_BAD_REQUEST);
         }
 
@@ -89,7 +86,7 @@ class OrderDraftController extends AbstractController
         }
 
         // Check if the order belongs to the current user
-        if ($order->getUser()->getId()->toRfc4122() !== $user->getId()->toRfc4122()) {
+        if ($order->getUser()->getId() !== $user->getId()) {
             return $this->json(['error' => 'You do not have permission to modify this order'], Response::HTTP_FORBIDDEN);
         }
 

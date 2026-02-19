@@ -4,7 +4,6 @@ namespace App\Dto;
 
 use App\Entity\Product;
 use Symfony\Component\Serializer\Annotation\Groups;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * Data transfer object for client-specific product information
@@ -12,7 +11,7 @@ use Symfony\Component\Uid\Uuid;
 class ClientProduct
 {
     #[Groups(['client_product:read'])]
-    public Uuid $id;
+    public int $id;
 
     #[Groups(['client_product:read'])]
     public string $name;

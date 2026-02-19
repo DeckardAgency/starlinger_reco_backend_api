@@ -12,8 +12,6 @@ use ApiPlatform\Metadata\Link;
 use App\Repository\DocumentationRevisionRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
-use Symfony\Component\Uid\Uuid;
-
 #[ORM\Entity(repositoryClass: DocumentationRevisionRepository::class)]
 #[ORM\Table]
 #[ApiResource(
@@ -42,9 +40,10 @@ use Symfony\Component\Uid\Uuid;
 class DocumentationRevision
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['documentation_revision:read', 'documentation:item'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\ManyToOne(targetEntity: Documentation::class, inversedBy: 'revisions')]
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
@@ -78,7 +77,6 @@ class DocumentationRevision
 
     public function __construct()
     {
-        $this->id = Uuid::v4();
         $this->editedAt = new \DateTime();
     }
 
@@ -87,9 +85,16 @@ class DocumentationRevision
         return sprintf('Revision %d - %s', $this->revisionNumber, $this->editedAt?->format('Y-m-d H:i:s') ?? '');
     }
 
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+
+        return $this;
     }
 
     public function getDocumentation(): ?Documentation

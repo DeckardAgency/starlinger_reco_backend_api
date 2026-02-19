@@ -21,7 +21,6 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Serializer\Annotation\SerializedName;
-use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 use ApiPlatform\OpenApi\Model;
 
@@ -91,9 +90,10 @@ use ApiPlatform\OpenApi\Model;
 class Product
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['product:read', 'product:list', 'order_item:read', 'order:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\Column(length: 255)]
     #[Gedmo\Slug(fields: ["partNo"])]
@@ -162,9 +162,9 @@ class Product
     #[Groups(['product:read', 'product:write'])]
     private ?int $fixedQty = null;
 
-    #[ORM\Column(name: 'product_group_id', type: 'string', length: 36, nullable: true)]
+    #[ORM\Column(name: 'product_group_id', type: 'integer', nullable: true)]
     #[Groups(['product:read', 'product:write'])]
-    private ?string $productGroupId = null;
+    private ?int $productGroupId = null;
 
     #[ORM\Column(name: 'catalog_code', length: 100, nullable: true)]
     #[Groups(['product:read', 'product:write'])]
@@ -174,9 +174,9 @@ class Product
     #[Groups(['product:read', 'product:write'])]
     private ?float $retailPrice = null;
 
-    #[ORM\Column(name: 'tax_type_id', type: 'string', length: 36, nullable: true)]
+    #[ORM\Column(name: 'tax_type_id', type: 'integer', nullable: true)]
     #[Groups(['product:read', 'product:write'])]
-    private ?string $taxTypeId = null;
+    private ?int $taxTypeId = null;
 
     #[ORM\Column(length: 10, nullable: true, options: ['default' => 'EUR'])]
     #[Groups(['product:read', 'product:write'])]
@@ -230,15 +230,21 @@ class Product
 
     public function __construct()
     {
-        $this->id = Uuid::v4();
         $this->imageGallery = new ArrayCollection();
         $this->documents = new ArrayCollection();
         $this->clientProductPrices = new ArrayCollection();
     }
 
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+
+        return $this;
     }
 
     public function getName(): ?string
@@ -430,12 +436,12 @@ class Product
         return $this;
     }
 
-    public function getProductGroupId(): ?string
+    public function getProductGroupId(): ?int
     {
         return $this->productGroupId;
     }
 
-    public function setProductGroupId(?string $productGroupId): static
+    public function setProductGroupId(?int $productGroupId): static
     {
         $this->productGroupId = $productGroupId;
         return $this;
@@ -463,12 +469,12 @@ class Product
         return $this;
     }
 
-    public function getTaxTypeId(): ?string
+    public function getTaxTypeId(): ?int
     {
         return $this->taxTypeId;
     }
 
-    public function setTaxTypeId(?string $taxTypeId): static
+    public function setTaxTypeId(?int $taxTypeId): static
     {
         $this->taxTypeId = $taxTypeId;
         return $this;

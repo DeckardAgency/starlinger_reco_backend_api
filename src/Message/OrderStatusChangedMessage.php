@@ -2,17 +2,15 @@
 
 namespace App\Message;
 
-use Symfony\Component\Uid\Uuid;
-
 class OrderStatusChangedMessage
 {
-    private Uuid $orderId;
+    private int $orderId;
     private string $oldStatus;
     private string $newStatus;
     private ?array $modifiedBy = null;
     private ?\DateTimeInterface $changedAt = null;
 
-    public function __construct(Uuid $orderId, string $oldStatus, string $newStatus)
+    public function __construct(int $orderId, string $oldStatus, string $newStatus)
     {
         $this->orderId = $orderId;
         $this->oldStatus = $oldStatus;
@@ -20,7 +18,7 @@ class OrderStatusChangedMessage
         $this->changedAt = new \DateTime();
     }
 
-    public function getOrderId(): Uuid
+    public function getOrderId(): int
     {
         return $this->orderId;
     }

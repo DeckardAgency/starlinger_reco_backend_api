@@ -15,8 +15,8 @@ class PriceCalculator
     public function getClientProductPrice(Client $client, Product $product): ?ClientProductPrice
     {
         foreach ($client->getProductPrices() as $clientProductPrice) {
-            // Compare UUIDs as strings to avoid comparison issues
-            if ($clientProductPrice->getProduct()->getId()->toRfc4122() === $product->getId()->toRfc4122()
+            // Compare IDs directly
+            if ($clientProductPrice->getProduct()->getId() === $product->getId()
                 && $clientProductPrice->isValid()) {
                 return $clientProductPrice;
             }

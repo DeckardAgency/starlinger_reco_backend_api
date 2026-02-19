@@ -74,7 +74,7 @@ class OrderDraftProcessor implements ProcessorInterface
 
             if ($this->logger) {
                 $this->logger->info('Order saved as draft', [
-                    'order_id' => $order->getId()->toRfc4122(),
+                    'order_id' => $order->getId(),
                     'order_number' => $order->getOrderNumber()
                 ]);
             }
@@ -93,7 +93,7 @@ class OrderDraftProcessor implements ProcessorInterface
 
             if ($this->logger) {
                 $this->logger->info('Draft order submitted', [
-                    'order_id' => $order->getId()->toRfc4122(),
+                    'order_id' => $order->getId(),
                     'order_number' => $order->getOrderNumber(),
                     'new_status' => $order->getStatus()
                 ]);

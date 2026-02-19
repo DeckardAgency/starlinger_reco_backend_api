@@ -77,8 +77,7 @@ class InvitationCompletedProcessor implements ProcessorInterface
 
         $this->logger->info('Creating user from invitation', [
             'email' => $invitation->getEmail(),
-            'invitation_id' => $invitation->getId()->toRfc4122()
-        ]);
+            'invitation_id' => $invitation->getId()        ]);
 
         // Create new user
         $user = new User();
@@ -114,10 +113,9 @@ class InvitationCompletedProcessor implements ProcessorInterface
         $this->entityManager->flush();
 
         $this->logger->info('User created successfully from invitation', [
-            'user_id' => $user->getId()->toRfc4122(),
+            'user_id' => $user->getId(),
             'email' => $user->getEmail(),
-            'invitation_id' => $invitation->getId()->toRfc4122()
-        ]);
+            'invitation_id' => $invitation->getId()        ]);
 
         return new InvitationCompletedOutput(
             'Account created successfully. You can now login.',

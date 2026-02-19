@@ -48,7 +48,7 @@ final class OrderPriceProcessor implements ProcessorInterface
 
         if ($authenticatedUser instanceof User) {
             $modifiedBy = [
-                'id' => $authenticatedUser->getId()->toRfc4122(),
+                'id' => $authenticatedUser->getId(),
                 'email' => $authenticatedUser->getEmail(),
                 'firstName' => $authenticatedUser->getFirstName(),
                 'lastName' => $authenticatedUser->getLastName(),
@@ -82,7 +82,7 @@ final class OrderPriceProcessor implements ProcessorInterface
         }
 
         $this->logger->info('Processing order for price calculation', [
-            'order_id' => $data->getId()?->toRfc4122(),
+            'order_id' => $data->getId(),
             'order_number' => $data->getOrderNumber(),
             'user' => $data->getUser()?->getEmail(),
             'items_count' => $data->getItems()->count(),
@@ -108,7 +108,7 @@ final class OrderPriceProcessor implements ProcessorInterface
         $data->calculateTotalAmount();
 
         $this->logger->info('Order prices calculated', [
-            'order_id' => $data->getId()?->toRfc4122(),
+            'order_id' => $data->getId(),
             'total_amount' => $data->getTotalAmount()
         ]);
 
@@ -154,7 +154,7 @@ final class OrderPriceProcessor implements ProcessorInterface
         // Skip all message dispatching for draft orders
         if ($order->isDraft()) {
             $this->logger->info('Skipping message dispatch for draft order', [
-                'order_id' => $order->getId()->toRfc4122(),
+                'order_id' => $order->getId(),
                 'status' => $order->getStatus()
             ]);
             return;
@@ -164,7 +164,7 @@ final class OrderPriceProcessor implements ProcessorInterface
         if ($isDraftSubmission && !$order->isDraft()) {
             try {
                 $this->logger->info('Dispatching OrderCreatedMessage for draft submission', [
-                    'order_id' => $order->getId()->toRfc4122(),
+                    'order_id' => $order->getId(),
                     'status' => $order->getStatus(),
                     'modified_by' => $modifiedBy
                 ]);
@@ -187,7 +187,7 @@ final class OrderPriceProcessor implements ProcessorInterface
         if ($isNewOrder && $operation->getMethod() === 'POST') {
             try {
                 $this->logger->info('Dispatching OrderCreatedMessage for new order', [
-                    'order_id' => $order->getId()->toRfc4122(),
+                    'order_id' => $order->getId(),
                     'status' => $order->getStatus(),
                     'modified_by' => $modifiedBy
                 ]);
@@ -224,7 +224,7 @@ final class OrderPriceProcessor implements ProcessorInterface
 
             if (!$product) {
                 $this->logger->warning('Order item without product', [
-                    'item_id' => $item->getId()?->toRfc4122()
+                    'item_id' => $item->getId()
                 ]);
                 continue;
             }
@@ -279,7 +279,7 @@ final class OrderPriceProcessor implements ProcessorInterface
         }
 
         $this->logger->info('Handling workflow transition for order', [
-            'order_id' => $order->getId()->toRfc4122(),
+            'order_id' => $order->getId(),
             'old_status' => $oldStatus,
             'new_status' => $newStatus,
             'current_marking' => $this->orderStateMachine->getMarking($order)->getPlaces()
@@ -306,7 +306,7 @@ final class OrderPriceProcessor implements ProcessorInterface
                 $this->orderStateMachine->apply($order, $transition);
 
                 $this->logger->info('Workflow transition applied successfully', [
-                    'order_id' => $order->getId()->toRfc4122(),
+                    'order_id' => $order->getId(),
                     'transition' => $transition,
                     'old_status' => $oldStatus,
                     'new_status' => $newStatus,
@@ -337,7 +337,7 @@ final class OrderPriceProcessor implements ProcessorInterface
             }
         } catch (TransitionException $e) {
             $this->logger->error('Workflow transition failed', [
-                'order_id' => $order->getId()->toRfc4122(),
+                'order_id' => $order->getId(),
                 'old_status' => $oldStatus,
                 'new_status' => $newStatus,
                 'error' => $e->getMessage()
@@ -410,7 +410,7 @@ final class OrderPriceProcessor implements ProcessorInterface
         }
 
         $this->logger->info('Order dispatched with tracking info', [
-            'order_id' => $order->getId()->toRfc4122(),
+            'order_id' => $order->getId(),
             'tracking_number' => $order->getTrackingNumber(),
             'tracking_carrier' => $order->getTrackingCarrier(),
             'tracking_url' => $order->getTrackingUrl(),
@@ -435,7 +435,7 @@ final class OrderPriceProcessor implements ProcessorInterface
         }
 
         $this->logger->info('Order canceled', [
-            'order_id' => $order->getId()->toRfc4122(),
+            'order_id' => $order->getId(),
             'cancellation_reason' => $order->getCancellationReason(),
             'cancelled_by' => $authenticatedUser?->getEmail()
         ]);

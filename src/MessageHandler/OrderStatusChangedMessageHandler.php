@@ -39,7 +39,7 @@ class OrderStatusChangedMessageHandler
         $modifiedBy = $message->getModifiedBy();
 
         $this->logger->info('Handling OrderStatusChangedMessage', [
-            'order_id' => $orderId->toRfc4122(),
+            'order_id' => $orderId,
             'previous_status' => $previousStatus,
             'new_status' => $newStatus,
             'modified_by' => $modifiedBy
@@ -50,7 +50,7 @@ class OrderStatusChangedMessageHandler
 
             if (!$order) {
                 $this->logger->error('Order not found in database', [
-                    'order_id' => $orderId->toRfc4122()
+                    'order_id' => $orderId
                 ]);
                 return;
             }
@@ -80,8 +80,8 @@ class OrderStatusChangedMessageHandler
                 $this->entityManager->flush();
 
                 $this->logger->info('Order status change logged', [
-                    'order_id' => $orderId->toRfc4122(),
-                    'log_id' => $log->getId()->toRfc4122(),
+                    'order_id' => $orderId,
+                    'log_id' => $log->getId(),
                     'transition' => $log->getTransitionDescription(),
                     'modified_by_name' => $message->getModifiedByFullName()
                 ]);
@@ -90,7 +90,7 @@ class OrderStatusChangedMessageHandler
             // Don't send notifications for draft status
             if ($newStatus === Order::STATUS_DRAFT) {
                 $this->logger->info('Skipping notifications for draft status', [
-                    'order_id' => $orderId->toRfc4122()
+                    'order_id' => $orderId
                 ]);
                 return;
             }
@@ -201,8 +201,7 @@ class OrderStatusChangedMessageHandler
                 'error' => $e->getMessage(),
                 'error_type' => get_class($e),
                 'trace' => $e->getTraceAsString(),
-                'order_id' => $order->getId()->toRfc4122()
-            ]);
+                'order_id' => $order->getId()            ]);
 
             // Don't re-throw - email failure shouldn't break the process
         }
@@ -215,7 +214,7 @@ class OrderStatusChangedMessageHandler
 
             if (!$user || !$user->getEmail()) {
                 $this->logger->warning('Cannot send customer status notification: no user or email', [
-                    'order_id' => $order->getId()->toRfc4122(),
+                    'order_id' => $order->getId(),
                     'order_number' => $order->getOrderNumber()
                 ]);
                 return;
@@ -310,8 +309,7 @@ class OrderStatusChangedMessageHandler
                 'error' => $e->getMessage(),
                 'error_type' => get_class($e),
                 'trace' => $e->getTraceAsString(),
-                'order_id' => $order->getId()->toRfc4122()
-            ]);
+                'order_id' => $order->getId()            ]);
 
             // Don't re-throw - email failure shouldn't break the process
         }

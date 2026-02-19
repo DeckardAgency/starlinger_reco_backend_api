@@ -46,7 +46,7 @@ class DocumentationRevisionProcessor implements ProcessorInterface
 
                 if ($contentChanged || $titleChanged) {
                     $this->logger->info('Documentation content changed, creating revision', [
-                        'documentation_id' => $data->getId()->toRfc4122(),
+                        'documentation_id' => $data->getId(),
                         'content_changed' => $contentChanged,
                         'title_changed' => $titleChanged
                     ]);

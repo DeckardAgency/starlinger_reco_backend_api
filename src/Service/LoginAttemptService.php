@@ -54,7 +54,7 @@ class LoginAttemptService
             $user->lockAccount(self::LOCK_DURATION_MINUTES);
 
             $this->logger->warning('Account locked due to too many failed login attempts', [
-                'user_id' => $user->getId()->toRfc4122(),
+                'user_id' => $user->getId(),
                 'user_email' => $user->getEmail(),
                 'failed_attempts' => $attempts,
                 'locked_until' => $user->getLockedUntil()->format('Y-m-d H:i:s'),
@@ -75,7 +75,7 @@ class LoginAttemptService
         $this->entityManager->flush();
 
         $this->logger->info('Failed login attempt recorded', [
-            'user_id' => $user->getId()->toRfc4122(),
+            'user_id' => $user->getId(),
             'user_email' => $user->getEmail(),
             'failed_attempts' => $attempts,
             'remaining_attempts' => $remainingAttempts,
@@ -101,7 +101,7 @@ class LoginAttemptService
             $this->entityManager->flush();
 
             $this->logger->info('Failed login attempts reset after successful login', [
-                'user_id' => $user->getId()->toRfc4122(),
+                'user_id' => $user->getId(),
                 'user_email' => $user->getEmail(),
             ]);
         }
@@ -143,7 +143,7 @@ class LoginAttemptService
         $this->entityManager->flush();
 
         $this->logger->info('Account manually unlocked', [
-            'user_id' => $user->getId()->toRfc4122(),
+            'user_id' => $user->getId(),
             'user_email' => $user->getEmail(),
         ]);
     }

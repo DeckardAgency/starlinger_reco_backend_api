@@ -1,0 +1,1489 @@
+<?php
+
+namespace App\Command;
+
+use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
+
+#[AsCommand(
+    name: 'app:import-production',
+    description: 'Import production data from starlinger_core into RECO',
+)]
+class ImportProductionDataCommand extends Command
+{
+    private SymfonyStyle $io;
+    private bool $dryRun = false;
+    private int $batchSize = 100;
+    private ?string $storeFilter = null;
+    private string $preferredStore = '3'; // English store
+    private array $currencyMap = [];
+    private array $orderStateMap = [];
+    private array $cityMap = [];
+    private array $accountUserMap = []; // account_id → first user_id
+    private array $importedIds = [];
+    private array $stats = [];
+
+    public function __construct(
+        private readonly Connection $legacyConnection,
+        private readonly EntityManagerInterface $entityManager,
+        private readonly UserPasswordHasherInterface $passwordHasher,
+    ) {
+        parent::__construct();
+    }
+
+    protected function configure(): void
+    {
+        $this
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Simulate import without writing data')
+            ->addOption('entity', null, InputOption::VALUE_OPTIONAL, 'Import only a specific entity (e.g. tax_type, product)')
+            ->addOption('batch-size', null, InputOption::VALUE_OPTIONAL, 'Batch size for large tables', 100)
+            ->addOption('store-id', null, InputOption::VALUE_OPTIONAL, 'Filter by store ID (from show_on_store)', null)
+            ->addOption('default-password', null, InputOption::VALUE_OPTIONAL, 'Default password for imported users', 'recouser123!');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $this->io = new SymfonyStyle($input, $output);
+        $this->dryRun = $input->getOption('dry-run');
+        $this->batchSize = (int) $input->getOption('batch-size');
+        $this->storeFilter = $input->getOption('store-id');
+        $defaultPassword = $input->getOption('default-password');
+
+        $this->io->title('Import Production Data' . ($this->dryRun ? ' [DRY RUN]' : ''));
+
+        if ($this->storeFilter) {
+            $this->io->note("Filtering by store ID: {$this->storeFilter}");
+        }
+
+        $entityFilter = $input->getOption('entity');
+        $legacy = $this->legacyConnection;
+        $conn = $this->entityManager->getConnection();
+
+        try {
+            // Build lookup maps
+            $this->buildLookupMaps($legacy);
+
+            // Import in dependency order
+            $importOrder = [
+                // Level 1 — Independent
+                'tax_type' => 'importTaxTypes',
+                'account_group' => 'importAccountGroups',
+                'department' => 'importDepartments',
+                'contact_title' => 'importContactTitles',
+                'import_manual_status' => 'importImportManualStatuses',
+                'import_manual_type' => 'importImportManualTypes',
+                'payment_type' => 'importPaymentTypes',
+                'packaging_price' => 'importPackagingPrices',
+                'discount' => 'importDiscounts',
+                // Level 2
+                'country' => 'importCountries',
+                'client' => 'importClients',
+                // Level 3
+                'warehouse' => 'importWarehouses',
+                'contact' => 'importContacts',
+                'user' => 'importUsers',
+                'address' => 'importAddresses',
+                // Level 4
+                'delivery_type' => 'importDeliveryTypes',
+                'product_group' => 'importProductGroups',
+                // Level 5
+                'delivery_price' => 'importDeliveryPrices',
+                'fuel_surcharge' => 'importFuelSurcharges',
+                'product' => 'importProducts',
+                // Level 6
+                'product_product_link' => 'importProductProductLinks',
+                'client_product_price' => 'importClientProductPrices',
+                'order' => 'importOrders',
+                'order_item' => 'importOrderItems',
+                'order_log' => 'importOrderLogs',
+                'product_discount' => 'importProductDiscounts',
+                'import_manual' => 'importImportManuals',
+            ];
+
+            foreach ($importOrder as $key => $method) {
+                if ($entityFilter && $entityFilter !== $key) {
+                    continue;
+                }
+                $this->$method($legacy, $conn, $defaultPassword);
+            }
+
+            // Summary
+            $this->io->section('Import Summary');
+            $summaryRows = [];
+            foreach ($this->stats as $entity => $count) {
+                $summaryRows[] = [$entity, $count];
+            }
+            $this->io->table(['Entity', 'Rows Imported'], $summaryRows);
+
+            $this->io->success('Import complete' . ($this->dryRun ? ' (dry run — no data written)' : ''));
+            return Command::SUCCESS;
+
+        } catch (\Exception $e) {
+            $this->io->error(['Import failed:', $e->getMessage(), $e->getTraceAsString()]);
+            return Command::FAILURE;
+        }
+    }
+
+    private function buildLookupMaps(Connection $legacy): void
+    {
+        $this->io->section('Building lookup maps...');
+
+        // Currency map: id → code
+        try {
+            $currencies = $legacy->fetchAllAssociative('SELECT id, code FROM currency_entity');
+            foreach ($currencies as $row) {
+                $this->currencyMap[(int) $row['id']] = $row['code'];
+            }
+            $this->io->writeln(sprintf('  Currency map: %d entries', count($this->currencyMap)));
+        } catch (\Exception $e) {
+            $this->io->warning('Could not build currency map: ' . $e->getMessage());
+        }
+
+        // Order state map: id → status string
+        try {
+            $states = $legacy->fetchAllAssociative('SELECT id, name FROM order_state_entity');
+            foreach ($states as $row) {
+                $this->orderStateMap[(int) $row['id']] = $this->mapOrderState($row['name']);
+            }
+            $this->io->writeln(sprintf('  Order state map: %d entries', count($this->orderStateMap)));
+        } catch (\Exception $e) {
+            $this->io->warning('Could not build order state map: ' . $e->getMessage());
+        }
+
+        // City map: only load cities referenced by addresses and warehouses (NOT all 2.8M!)
+        try {
+            $cityIds = [];
+            // Collect city_ids from address_entity
+            $addrCities = $legacy->fetchAllAssociative('SELECT DISTINCT city_id FROM address_entity WHERE city_id IS NOT NULL AND city_id > 0');
+            foreach ($addrCities as $r) {
+                $cityIds[] = (int) $r['city_id'];
+            }
+            // Collect city_ids from warehouse_entity
+            $whCities = $legacy->fetchAllAssociative('SELECT DISTINCT city_id FROM warehouse_entity WHERE city_id IS NOT NULL AND city_id > 0');
+            foreach ($whCities as $r) {
+                $cityIds[] = (int) $r['city_id'];
+            }
+            $cityIds = array_unique($cityIds);
+
+            if (!empty($cityIds)) {
+                $placeholders = implode(',', $cityIds);
+                $cities = $legacy->fetchAllAssociative("SELECT id, name FROM city_entity WHERE id IN ({$placeholders})");
+                foreach ($cities as $row) {
+                    $this->cityMap[(int) $row['id']] = $row['name'];
+                }
+            }
+            $this->io->writeln(sprintf('  City map: %d entries (filtered from referenced)', count($this->cityMap)));
+        } catch (\Exception $e) {
+            $this->io->warning('Could not build city map: ' . $e->getMessage());
+        }
+    }
+
+    private function mapOrderState(string $name): string
+    {
+        $name = strtolower(trim($name));
+        return match (true) {
+            str_contains($name, 'draft') => 'draft',
+            str_contains($name, 'pending') => 'pending',
+            str_contains($name, 'confirm') => 'confirmed',
+            str_contains($name, 'process') => 'processing',
+            str_contains($name, 'dispatch'), str_contains($name, 'ship'), str_contains($name, 'sent') => 'dispatched',
+            str_contains($name, 'deliver') => 'delivered',
+            str_contains($name, 'cancel') => 'cancelled',
+            str_contains($name, 'complet'), str_contains($name, 'done') => 'completed',
+            str_contains($name, 'offer') => 'offer',
+            str_contains($name, 'new') => 'pending',
+            default => 'pending',
+        };
+    }
+
+    private function matchesStoreFilter(?string $showOnStore): bool
+    {
+        if (!$this->storeFilter) {
+            return true;
+        }
+        if (empty($showOnStore)) {
+            return false;
+        }
+
+        // Format is {"3":1,"6":1} — keys are store IDs, values are 1/0
+        $decoded = @json_decode($showOnStore, true);
+        if (is_array($decoded)) {
+            return !empty($decoded[$this->storeFilter]);
+        }
+
+        // Try PHP unserialize as fallback
+        $decoded = @unserialize($showOnStore);
+        if (is_array($decoded)) {
+            return !empty($decoded[$this->storeFilter]);
+        }
+
+        return false;
+    }
+
+    /**
+     * Safely convert a value to 0 or 1 for TINYINT boolean columns.
+     * Handles empty strings, null, and other edge cases that MySQL strict mode rejects.
+     */
+    private function toBool($value): int
+    {
+        if ($value === '' || $value === null) {
+            return 0;
+        }
+        return (int) (bool) $value;
+    }
+
+    /**
+     * Extract a scalar value from a potential JSON per-store field.
+     * Returns the raw value if not JSON, or the preferred store's value if JSON.
+     */
+    private function extractLocalizedValue($value)
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (!is_string($value) || $value[0] !== '{') {
+            return $value;
+        }
+        $decoded = @json_decode($value, true);
+        if (!is_array($decoded)) {
+            return $value;
+        }
+        return $decoded[$this->preferredStore] ?? $decoded['3'] ?? reset($decoded) ?: null;
+    }
+
+    /**
+     * Extract localized name from JSON format {"3":"English name","6":"German name"}
+     */
+    private function extractLocalizedName(?string $jsonName, string $fallback = 'Unknown'): string
+    {
+        if (empty($jsonName)) {
+            return $fallback;
+        }
+
+        $decoded = @json_decode($jsonName, true);
+        if (!is_array($decoded)) {
+            // Plain string, not JSON
+            return $jsonName;
+        }
+
+        // Prefer English store (3), then German store (6), then first value
+        return $decoded[$this->preferredStore]
+            ?? $decoded['3']
+            ?? reset($decoded)
+            ?: $fallback;
+    }
+
+    private function importBatch(Connection $conn, string $table, array $rows): void
+    {
+        if ($this->dryRun || empty($rows)) {
+            return;
+        }
+
+        $conn->beginTransaction();
+        try {
+            // Disable FK checks for ID setting
+            $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 0');
+
+            foreach ($rows as $row) {
+                // Sanitize zero dates in all datetime columns
+                foreach ($row as $key => $value) {
+                    if (is_string($value) && str_starts_with($value, '0000-00-00')) {
+                        $row[$key] = date('Y-m-d H:i:s');
+                    }
+                }
+                $conn->insert($table, $row);
+            }
+
+            $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
+            $conn->commit();
+        } catch (\Exception $e) {
+            $conn->rollBack();
+            throw $e;
+        }
+    }
+
+    private function resetAutoIncrement(Connection $conn, string $table): void
+    {
+        if ($this->dryRun) {
+            return;
+        }
+
+        try {
+            // Strip backticks if already present to avoid double-escaping
+            $cleanTable = trim($table, '`');
+            $maxId = $conn->fetchOne("SELECT COALESCE(MAX(id), 0) FROM `{$cleanTable}`");
+            $conn->executeStatement("ALTER TABLE `{$cleanTable}` AUTO_INCREMENT = " . ((int) $maxId + 1));
+        } catch (\Exception $e) {
+            $this->io->warning("Could not reset AUTO_INCREMENT for {$table}: " . $e->getMessage());
+        }
+    }
+
+    // ─── Level 1: Independent ───────────────────────────────────────────
+
+    private function importTaxTypes(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing TaxTypes');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM tax_type_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $row['name'] ?? 'Unknown',
+                'percent' => $row['percent'] ?? '0.00',
+                'remote_id' => isset($row['remote_id']) ? (int) $row['remote_id'] : null,
+                'remote_code' => $row['remote_code'] ?? null,
+                'is_active' => $this->toBool($row['is_active'] ?? 1),
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+            $this->importedIds['tax_type'][] = (int) $row['id'];
+        }
+
+        $this->io->writeln(sprintf('  Found %d tax types', count($rows)));
+        $this->importBatch($conn, 'tax_type', $rows);
+        $this->resetAutoIncrement($conn, 'tax_type');
+        $this->stats['TaxType'] = count($rows);
+    }
+
+    private function importAccountGroups(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing AccountGroups');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM account_group_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $row['name'] ?? 'Unknown',
+                'is_active' => $this->toBool($row['is_active'] ?? $row['active'] ?? 1),
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+            $this->importedIds['account_group'][] = (int) $row['id'];
+        }
+
+        $this->io->writeln(sprintf('  Found %d account groups', count($rows)));
+        $this->importBatch($conn, 'account_group', $rows);
+        $this->resetAutoIncrement($conn, 'account_group');
+        $this->stats['AccountGroup'] = count($rows);
+    }
+
+    private function importDepartments(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Departments');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM department_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $row['name'] ?? null,
+                'entity_type_id' => (int) ($row['entity_type_id'] ?? 0),
+                'attribute_set_id' => (int) ($row['attribute_set_id'] ?? 0),
+                'created' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'modified' => $row['modified'] ?? date('Y-m-d H:i:s'),
+                'entity_state_id' => isset($row['entity_state_id']) ? (int) $row['entity_state_id'] : null,
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d departments', count($rows)));
+        $this->importBatch($conn, 'department_entity', $rows);
+        $this->resetAutoIncrement($conn, 'department_entity');
+        $this->stats['Department'] = count($rows);
+    }
+
+    private function importContactTitles(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing ContactTitles');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM contact_title_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $row['name'] ?? null,
+                'uid' => $row['uid'] ?? null,
+                'is_custom' => isset($row['is_custom']) ? (int) $row['is_custom'] : null,
+                'entity_type_id' => (int) ($row['entity_type_id'] ?? 0),
+                'attribute_set_id' => (int) ($row['attribute_set_id'] ?? 0),
+                'created' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'modified' => $row['modified'] ?? date('Y-m-d H:i:s'),
+                'entity_state_id' => isset($row['entity_state_id']) ? (int) $row['entity_state_id'] : null,
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d contact titles', count($rows)));
+        $this->importBatch($conn, 'contact_title_entity', $rows);
+        $this->resetAutoIncrement($conn, 'contact_title_entity');
+        $this->stats['ContactTitle'] = count($rows);
+    }
+
+    private function importImportManualStatuses(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing ImportManualStatuses');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM import_manual_status_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $row['name'] ?? null,
+                'created_at' => $row['created'] ?? $row['created_at'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? $row['updated_at'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d import manual statuses', count($rows)));
+        $this->importBatch($conn, 'import_manual_status_entity', $rows);
+        $this->resetAutoIncrement($conn, 'import_manual_status_entity');
+        $this->stats['ImportManualStatus'] = count($rows);
+    }
+
+    private function importImportManualTypes(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing ImportManualTypes');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM import_manual_type_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $row['name'] ?? null,
+                'manager_code' => $row['manager_code'] ?? null,
+                'method' => $row['method'] ?? null,
+                'estimated_duration' => isset($row['estimated_duration']) ? (int) $row['estimated_duration'] : null,
+                'manual_type_code' => $row['manual_type_code'] ?? null,
+                'send_email' => isset($row['send_email']) ? $this->toBool($row['send_email']) : null,
+                'email_template_code' => $row['email_template_code'] ?? null,
+                'created_at' => $row['created'] ?? $row['created_at'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? $row['updated_at'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d import manual types', count($rows)));
+        $this->importBatch($conn, 'import_manual_type_entity', $rows);
+        $this->resetAutoIncrement($conn, 'import_manual_type_entity');
+        $this->stats['ImportManualType'] = count($rows);
+    }
+
+    private function importPaymentTypes(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing PaymentTypes');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM payment_type_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $this->extractLocalizedName($row['name'] ?? null, 'Unknown'),
+                'short_description' => $this->extractLocalizedValue($row['short_description'] ?? $row['description'] ?? null),
+                'provider_code' => $row['provider_code'] ?? null,
+                'configuration' => !empty($row['configuration']) ? $row['configuration'] : null,
+                'enable_installments' => $this->toBool($row['enable_installments'] ?? 0),
+                'remote_code' => $row['remote_code'] ?? null,
+                'fiscal_code' => $row['fiscal_code'] ?? null,
+                'payment_fee' => $this->extractLocalizedValue($row['payment_fee'] ?? null),
+                'min_cart_total' => $this->extractLocalizedValue($row['min_cart_total'] ?? null),
+                'max_cart_total' => $this->extractLocalizedValue($row['max_cart_total'] ?? null),
+                'color' => $row['color'] ?? null,
+                'icon' => $row['icon'] ?? null,
+                'allow_recurring_payment' => $this->toBool($row['allow_recurring_payment'] ?? 0),
+                'recurring_days_reminder' => isset($row['recurring_days_reminder']) ? (int) $row['recurring_days_reminder'] : null,
+                'use_as_default' => $this->toBool($row['use_as_default'] ?? 0),
+                'is_active' => $this->toBool($row['is_active'] ?? $row['active'] ?? 1),
+                'sort_order' => (int) ($row['sort_order'] ?? $row['ord'] ?? 0),
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d payment types', count($rows)));
+        $this->importBatch($conn, 'payment_type', $rows);
+        $this->resetAutoIncrement($conn, 'payment_type');
+        $this->stats['PaymentType'] = count($rows);
+    }
+
+    private function importPackagingPrices(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing PackagingPrices');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM packaging_price_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $row['name'] ?? null,
+                'size_from' => $row['size_from'] ?? null,
+                'size_to' => $row['size_to'] ?? null,
+                'price_base' => $row['price_base'] ?? '0.0000',
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d packaging prices', count($rows)));
+        $this->importBatch($conn, 'packaging_price', $rows);
+        $this->resetAutoIncrement($conn, 'packaging_price');
+        $this->stats['PackagingPrice'] = count($rows);
+    }
+
+    private function importDiscounts(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Discounts');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM discount_catalog_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $row['name'] ?? 'Unknown',
+                'is_active' => $this->toBool($row['is_active'] ?? $row['active'] ?? 1),
+                'date_valid_from' => $row['date_valid_from'] ?? null,
+                'date_valid_to' => $row['date_valid_to'] ?? null,
+                'priority' => (int) ($row['priority'] ?? $row['ord'] ?? 0),
+                'discount_percent' => $row['discount_percent'] ?? $row['discount'] ?? null,
+                'rules' => !empty($row['rules']) ? $row['rules'] : null,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d discounts', count($rows)));
+        $this->importBatch($conn, 'discount', $rows);
+        $this->resetAutoIncrement($conn, 'discount');
+        $this->stats['Discount'] = count($rows);
+    }
+
+    // ─── Level 2: Depends on Level 1 ───────────────────────────────────
+
+    private function importCountries(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Countries');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM country_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $taxTypeId = isset($row['tax_type_id']) ? (int) $row['tax_type_id'] : null;
+            $countryName = $this->extractLocalizedName($row['name'] ?? null, 'Unknown');
+            $code = $row['code'] ?? null;
+            if (empty($code)) {
+                // Generate 2-char code: first char of name + last digit of ID
+                $firstChar = strtoupper(substr($countryName, 0, 1));
+                $code = $firstChar . ((int) $row['id'] % 10);
+            }
+            // Ensure code is max 2 chars and unique
+            $code = substr($code, 0, 2);
+            static $usedCodes = [];
+            if (isset($usedCodes[$code])) {
+                // Use first char + cycling second char (A-Z, 0-9)
+                $base = $code[0];
+                for ($c = 'A'; $c <= 'Z'; $c++) {
+                    $alt = $base . $c;
+                    if (!isset($usedCodes[$alt])) {
+                        $code = $alt;
+                        break;
+                    }
+                }
+            }
+            $usedCodes[$code] = true;
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $countryName,
+                'code' => $code,
+                'iso31661_alpha3_code' => $this->extractLocalizedValue($row['iso31661_alpha3_code'] ?? $row['alpha3_code'] ?? null),
+                'european_union' => $this->toBool($row['european_union'] ?? $row['eu'] ?? 0),
+                'default_tax_percent' => $this->extractLocalizedValue($row['default_tax_percent'] ?? $row['tax_percent'] ?? null),
+                'dhl_zone' => isset($row['dhl_zone']) ? (int) $row['dhl_zone'] : null,
+                'tax_type_id' => $taxTypeId,
+                'is_active' => $this->toBool($row['is_active'] ?? $row['active'] ?? 1),
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+            $this->importedIds['country'][] = (int) $row['id'];
+        }
+
+        $this->io->writeln(sprintf('  Found %d countries', count($rows)));
+        $this->importBatch($conn, 'country', $rows);
+        $this->resetAutoIncrement($conn, 'country');
+        $this->stats['Country'] = count($rows);
+    }
+
+    private function importClients(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Clients');
+        // account_entity has NO show_on_store — import all accounts
+        $source = $legacy->fetchAllAssociative('SELECT * FROM account_entity WHERE entity_state_id = 1 OR entity_state_id IS NULL');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $accountGroupId = isset($row['account_group_id']) && $row['account_group_id'] ? (int) $row['account_group_id'] : null;
+            // If account_group_entity has 0 rows, set to null to avoid FK violation
+            if ($accountGroupId && empty($this->importedIds['account_group'])) {
+                $accountGroupId = null;
+            }
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $row['name'] ?? 'Unknown',
+                'code' => $row['code'] ?? 'ACC-' . $row['id'],
+                'description' => $row['description'] ?? null,
+                'address' => null, // Address stored in address_entity, not inline
+                'phone_number' => $row['phone'] ?? null,
+                'email' => $row['email'] ?? null,
+                'vat_number' => $row['oib'] ?? null,
+                'purchase_limit' => $row['purchase_limit'] ?? null,
+                'amount_spent' => $row['amount_spent'] ?? null,
+                'other_phone' => $row['phone_2'] ?? null,
+                'other_email' => $row['secondary_email'] ?? null,
+                'fax' => $row['fax'] ?? null,
+                'web' => $row['web'] ?? null,
+                'max_active_users' => null,
+                'is_active' => $this->toBool($row['is_active'] ?? 1),
+                'is_archived' => 0,
+                'is_legal_entity' => $this->toBool($row['is_legal_entity'] ?? 0),
+                'account_type' => null,
+                'account_group_id' => $accountGroupId,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+            $this->importedIds['client'][] = (int) $row['id'];
+        }
+
+        $this->io->writeln(sprintf('  Found %d clients', count($rows)));
+        $this->importBatch($conn, 'client', $rows);
+        $this->resetAutoIncrement($conn, 'client');
+        $this->stats['Client'] = count($rows);
+    }
+
+    // ─── Level 3: Depends on Level 2 ───────────────────────────────────
+
+    private function importWarehouses(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Warehouses');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM warehouse_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $cityName = null;
+            if (isset($row['city_id']) && $row['city_id']) {
+                $cityName = $this->cityMap[(int) $row['city_id']] ?? null;
+            }
+            if (!$cityName && isset($row['city'])) {
+                $cityName = $row['city'];
+            }
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $this->extractLocalizedName($row['name'] ?? null, 'Unknown'),
+                'code' => $row['code'] ?? null,
+                'address' => $row['address'] ?? null,
+                'city' => $cityName,
+                'email' => $row['email'] ?? null,
+                'phone' => $row['phone'] ?? null,
+                'office_name' => $this->extractLocalizedName($row['office_name'] ?? null, '') ?: null,
+                'url' => $row['url'] ?? null,
+                'latitude' => $row['latitude'] ?? null,
+                'longitude' => $row['longitude'] ?? null,
+                'show_as_location' => $this->toBool($row['show_as_location'] ?? 0),
+                'description' => $this->extractLocalizedName($row['description'] ?? null, '') ?: null,
+                'contact_person' => $row['contact_person'] ?? null,
+                'is_active' => $this->toBool($row['active'] ?? $row['is_active'] ?? 1),
+                'ready_for_shop' => $this->toBool($row['ready_for_shop'] ?? 0),
+                'keep_url' => $this->toBool($row['keep_url'] ?? 0),
+                'auto_generate_url' => $this->toBool($row['auto_generate_url'] ?? 0),
+                'remote_id' => isset($row['remote_id']) ? (int) $row['remote_id'] : null,
+                'country_id' => isset($row['country_id']) && $row['country_id'] ? (int) $row['country_id'] : null,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+            $this->importedIds['warehouse'][] = (int) $row['id'];
+        }
+
+        $this->io->writeln(sprintf('  Found %d warehouses', count($rows)));
+        $this->importBatch($conn, 'warehouse', $rows);
+        $this->resetAutoIncrement($conn, 'warehouse');
+        $this->stats['Warehouse'] = count($rows);
+    }
+
+    private function importContacts(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Contacts');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM contact_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            // Only import contacts for imported clients
+            $accountId = isset($row['account_id']) ? (int) $row['account_id'] : null;
+            if ($this->storeFilter && $accountId && !in_array($accountId, $this->importedIds['client'] ?? [])) {
+                continue;
+            }
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'first_name' => $row['first_name'] ?? null,
+                'last_name' => $row['last_name'] ?? null,
+                'full_name' => $row['full_name'] ?? null,
+                'email' => $row['email'] ?? null,
+                'phone' => $row['phone'] ?? null,
+                'phone_2' => $row['phone_2'] ?? null,
+                'home_phone' => $row['home_phone'] ?? null,
+                'secondary_email' => $row['secondary_email'] ?? null,
+                'fax' => $row['fax'] ?? null,
+                'date_of_birth' => $row['date_of_birth'] ?? null,
+                'is_active' => isset($row['is_active']) ? (int) $row['is_active'] : null,
+                'description' => $row['description'] ?? null,
+                'account_id' => $accountId,
+                'title_id' => isset($row['title_id']) ? (int) $row['title_id'] : null,
+                'department_id' => isset($row['department_id']) ? (int) $row['department_id'] : null,
+                'support_person_id' => isset($row['support_person_id']) ? (int) $row['support_person_id'] : null,
+                'level_of_support_id' => isset($row['level_of_support_id']) ? (int) $row['level_of_support_id'] : null,
+                'entity_type_id' => (int) ($row['entity_type_id'] ?? 0),
+                'attribute_set_id' => (int) ($row['attribute_set_id'] ?? 0),
+                'created' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'modified' => $row['modified'] ?? date('Y-m-d H:i:s'),
+                'entity_state_id' => isset($row['entity_state_id']) ? (int) $row['entity_state_id'] : null,
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d contacts (filtered)', count($rows)));
+        $this->importBatch($conn, 'contact_entity', $rows);
+        $this->resetAutoIncrement($conn, 'contact_entity');
+        $this->stats['Contact'] = count($rows);
+    }
+
+    private function importUsers(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Users');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM user_entity WHERE entity_state_id = 1 OR entity_state_id IS NULL');
+
+        // Build account→user map via account_entity.owner_id
+        $accountOwners = $legacy->fetchAllAssociative('SELECT id, owner_id FROM account_entity WHERE owner_id IS NOT NULL AND owner_id > 0');
+        $userToAccountMap = []; // user_id → account_id
+        foreach ($accountOwners as $ao) {
+            $userId = (int) $ao['owner_id'];
+            $accountId = (int) $ao['id'];
+            // First account wins for this user
+            if (!isset($userToAccountMap[$userId])) {
+                $userToAccountMap[$userId] = $accountId;
+            }
+            // Build reverse map: account → user (first user wins)
+            if (!isset($this->accountUserMap[$accountId])) {
+                $this->accountUserMap[$accountId] = $userId;
+            }
+        }
+
+        $rows = [];
+        $tempUser = new \App\Entity\User();
+        $hashedPassword = $this->passwordHasher->hashPassword($tempUser, $defaultPassword);
+
+        foreach ($source as $row) {
+            $userId = (int) $row['id'];
+            $clientId = $userToAccountMap[$userId] ?? null;
+
+            // Parse roles — FOS User Bundle stores as PHP serialized or JSON
+            $roles = ['ROLE_USER'];
+            if (!empty($row['roles'])) {
+                $decoded = @json_decode($row['roles'], true);
+                if (is_array($decoded) && !empty($decoded)) {
+                    $roles = $decoded;
+                } else {
+                    $decoded = @unserialize($row['roles']);
+                    if (is_array($decoded) && !empty($decoded)) {
+                        $roles = $decoded;
+                    }
+                }
+            }
+
+            // Map FOS roles to RECO roles
+            $roles = $this->mapFosRoles($roles);
+
+            $rows[] = [
+                'id' => $userId,
+                'email' => $row['email'] ?? 'user-' . $row['id'] . '@imported.local',
+                'username' => $row['username'] ?? null,
+                'roles' => json_encode($roles),
+                'password' => $hashedPassword,
+                'first_name' => $row['first_name'] ?? 'Imported',
+                'last_name' => $row['last_name'] ?? 'User',
+                'phone_number' => null, // user_entity has no phone field
+                'address' => null,
+                'is_active' => $this->toBool($row['enabled'] ?? 1),
+                'failed_login_attempts' => 0,
+                'client_id' => $clientId,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+            $this->importedIds['user'][] = $userId;
+        }
+
+        $this->io->writeln(sprintf('  Found %d users', count($rows)));
+        $this->io->writeln(sprintf('  Account-User mappings: %d', count($this->accountUserMap)));
+        $this->importBatch($conn, '`user`', $rows);
+        $this->resetAutoIncrement($conn, '`user`');
+        $this->stats['User'] = count($rows);
+    }
+
+    private function mapFosRoles(array $fosRoles): array
+    {
+        $recoRoles = [];
+        foreach ($fosRoles as $role) {
+            $role = strtoupper(trim($role));
+            $recoRoles[] = match (true) {
+                str_contains($role, 'SUPER') => 'ROLE_SUPER_ADMIN',
+                str_contains($role, 'ADMIN') => 'ROLE_ADMIN',
+                str_contains($role, 'MANAGER') => 'ROLE_CLIENT_ADMIN',
+                default => $role, // Keep as-is (ROLE_USER, etc.)
+            };
+        }
+
+        return array_unique($recoRoles) ?: ['ROLE_USER'];
+    }
+
+    private function importAddresses(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Addresses');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM address_entity WHERE entity_state_id = 1 OR entity_state_id IS NULL');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $clientId = isset($row['account_id']) ? (int) $row['account_id'] : null;
+            if (!$clientId) {
+                continue;
+            }
+            // Only import addresses for imported clients
+            if (!in_array($clientId, $this->importedIds['client'] ?? [])) {
+                continue;
+            }
+
+            $cityName = null;
+            if (isset($row['city_id']) && $row['city_id']) {
+                $cityName = $this->cityMap[(int) $row['city_id']] ?? null;
+            }
+            if (!$cityName) {
+                $cityName = $row['city'] ?? 'Unknown';
+            }
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'client_id' => $clientId,
+                'country_id' => isset($row['country_id']) && $row['country_id'] ? (int) $row['country_id'] : null,
+                'street' => $row['street'] ?? 'N/A',
+                'city' => $cityName,
+                'postal_code' => $row['postal_code'] ?? null,
+                'is_billing' => $this->toBool($row['billing'] ?? 0),
+                'is_delivery' => $this->toBool($row['shipping'] ?? $row['delivery'] ?? 0),
+                'is_active' => $this->toBool($row['active'] ?? $row['is_active'] ?? 1),
+                'name' => $row['name'] ?? null,
+                'phone' => $row['phone'] ?? null,
+                'email' => $row['email'] ?? null,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d addresses', count($rows)));
+        $this->importBatch($conn, 'address', $rows);
+        $this->resetAutoIncrement($conn, 'address');
+        $this->stats['Address'] = count($rows);
+    }
+
+    // ─── Level 4: Depends on Level 3 ───────────────────────────────────
+
+    private function importDeliveryTypes(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing DeliveryTypes');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM delivery_type_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            // Name may be JSON per store
+            $name = $this->extractLocalizedName($row['name'] ?? null, 'DeliveryType-' . $row['id']);
+
+            // use_as_default might be JSON or int
+            $useAsDefault = false;
+            if (isset($row['use_as_default'])) {
+                $decoded = @json_decode($row['use_as_default'], true);
+                if (is_array($decoded)) {
+                    $useAsDefault = !empty($decoded[$this->preferredStore] ?? $decoded['3'] ?? false);
+                } else {
+                    $useAsDefault = $this->toBool($row['use_as_default']);
+                }
+            }
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $name,
+                'short_description' => $this->extractLocalizedName($row['description'] ?? null, '') ?: null,
+                'remote_code' => $row['remote_code'] ?? null,
+                'remote_id' => $row['remote_id'] ?? null,
+                'color' => $row['color'] ?? null,
+                'is_delivery' => $this->toBool($row['is_delivery'] ?? 1),
+                'max_weight' => $row['max_weight'] ?? null,
+                'gross_factor' => $row['gross_factor'] ?? null,
+                'hide_if_not_applicable' => $this->toBool($row['hide_if_not_applicable'] ?? 0),
+                'allow_recurring_payment' => $this->toBool($row['allow_recurring_payment'] ?? 0),
+                'use_as_default' => (int) $useAsDefault,
+                'is_active' => $this->toBool($row['active'] ?? 1),
+                'ready_for_shop' => 0,
+                'sort_order' => (int) ($row['ord'] ?? 0),
+                'warehouse_id' => isset($row['warehouse_id']) && $row['warehouse_id'] ? (int) $row['warehouse_id'] : null,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+            $this->importedIds['delivery_type'][] = (int) $row['id'];
+        }
+
+        $this->io->writeln(sprintf('  Found %d delivery types', count($rows)));
+        $this->importBatch($conn, 'delivery_type', $rows);
+        $this->resetAutoIncrement($conn, 'delivery_type');
+        $this->stats['DeliveryType'] = count($rows);
+    }
+
+    private function importProductGroups(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing ProductGroups');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM product_group_entity ORDER BY COALESCE(product_group_id, 0), id');
+        $rows = [];
+        $usedSlugs = [];
+
+        foreach ($source as $row) {
+            // Name may be JSON per store
+            $name = $this->extractLocalizedName($row['name'] ?? null, 'Group-' . $row['id']);
+
+            // Slug from url field (may be JSON)
+            $slug = $this->extractLocalizedName($row['url'] ?? null, '');
+            if (empty($slug)) {
+                $slug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $name));
+            }
+            $slug = trim($slug, '-');
+            if (empty($slug)) {
+                $slug = 'group-' . $row['id'];
+            }
+            $baseSlug = $slug;
+            $i = 1;
+            while (isset($usedSlugs[$slug])) {
+                $slug = $baseSlug . '-' . $i++;
+            }
+            $usedSlugs[$slug] = true;
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => $name,
+                'slug' => $slug,
+                'description' => $this->extractLocalizedName($row['description'] ?? null, '') ?: null,
+                'product_group_code' => $row['code'] ?? null,
+                'level' => (int) ($row['level'] ?? 0),
+                'total_products' => (int) ($row['products_in_group'] ?? 0),
+                'show_on_homepage' => $this->toBool($row['show_on_homepage'] ?? 0),
+                'is_active' => $this->toBool($row['is_active'] ?? $row['active'] ?? 1),
+                'sort_order' => (int) ($row['ord'] ?? 0),
+                'meta_title' => $this->extractLocalizedName($row['meta_title'] ?? null, '') ?: null,
+                'meta_description' => $this->extractLocalizedName($row['meta_description'] ?? null, '') ?: null,
+                'meta_keywords' => $this->extractLocalizedName($row['meta_keywords'] ?? null, '') ?: null,
+                'parent_id' => isset($row['product_group_id']) && $row['product_group_id'] ? (int) $row['product_group_id'] : null,
+                'featured_image_id' => null,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+            $this->importedIds['product_group'][] = (int) $row['id'];
+        }
+
+        $this->io->writeln(sprintf('  Found %d product groups', count($rows)));
+        $this->importBatch($conn, 'product_group', $rows);
+        $this->resetAutoIncrement($conn, 'product_group');
+        $this->stats['ProductGroup'] = count($rows);
+    }
+
+    // ─── Level 5: Depends on Level 4 ───────────────────────────────────
+
+    private function importDeliveryPrices(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing DeliveryPrices');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM delivery_prices_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $deliveryTypeId = isset($row['delivery_id']) && $row['delivery_id'] ? (int) $row['delivery_id'] : null;
+            if (!$deliveryTypeId) {
+                continue; // FK required
+            }
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'delivery_type_id' => $deliveryTypeId,
+                'name' => $row['name'] ?? null,
+                'dhl_zone' => isset($row['dhl_zone_id']) && $row['dhl_zone_id'] ? (int) $row['dhl_zone_id'] : null,
+                'postal_code_from' => $row['postal_code_from'] ?? null,
+                'postal_code_to' => $row['postal_code_to'] ?? null,
+                'exclude_postal_codes' => $row['exclude_postal_codes'] ?? null,
+                'size_from' => $row['size_from'] ?? null,
+                'size_to' => $row['size_to'] ?? null,
+                'price_base' => $row['price_base'] ?? '0.00',
+                'delivery_days' => isset($row['delivery_days']) ? (int) $row['delivery_days'] : null,
+                'step_starts_at' => $row['step_starts_at'] ?? null,
+                'for_every_next_size' => $row['for_every_next_size'] ?? null,
+                'price_base_step' => $row['price_base_step'] ?? null,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d delivery prices', count($rows)));
+        $this->importBatch($conn, 'delivery_price', $rows);
+        $this->resetAutoIncrement($conn, 'delivery_price');
+        $this->stats['DeliveryPrice'] = count($rows);
+    }
+
+    private function importFuelSurcharges(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing FuelSurcharges');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM fuel_surcharge_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'delivery_type_id' => isset($row['delivery_type_id']) && $row['delivery_type_id'] ? (int) $row['delivery_type_id'] : null,
+                'name' => null, // Not in legacy schema
+                'date' => $row['date'] ?? null,
+                'fuel_surcharge' => $row['fuel_surcharge'] ?? null,
+                'size_from' => null,
+                'size_to' => null,
+                'price_base' => null,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d fuel surcharges', count($rows)));
+        $this->importBatch($conn, 'fuel_surcharge', $rows);
+        $this->resetAutoIncrement($conn, 'fuel_surcharge');
+        $this->stats['FuelSurcharge'] = count($rows);
+    }
+
+    private function importProducts(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Products');
+
+        $offset = 0;
+        $total = 0;
+        $batch = [];
+        $usedSlugs = [];
+
+        while (true) {
+            $source = $legacy->fetchAllAssociative(
+                "SELECT * FROM product_entity ORDER BY id LIMIT {$this->batchSize} OFFSET {$offset}"
+            );
+
+            if (empty($source)) {
+                break;
+            }
+
+            foreach ($source as $row) {
+                if (!$this->matchesStoreFilter($row['show_on_store'] ?? null)) {
+                    continue;
+                }
+
+                $currencyCode = 'EUR';
+                if (isset($row['currency_id']) && $row['currency_id']) {
+                    $currencyCode = $this->currencyMap[(int) $row['currency_id']] ?? 'EUR';
+                }
+
+                // Product name is JSON per store: {"3":"English","6":"German"}
+                $name = $this->extractLocalizedName($row['name'] ?? null, 'Product-' . $row['id']);
+
+                // Short description may also be JSON
+                $shortDesc = $this->extractLocalizedName($row['short_description'] ?? null, '');
+                if ($shortDesc === '') $shortDesc = null;
+
+                // Technical description may be JSON
+                $techDesc = $this->extractLocalizedName($row['description'] ?? null, '');
+                if ($techDesc === '') $techDesc = null;
+
+                // Slug from url field (may also be JSON)
+                $slug = $this->extractLocalizedName($row['url'] ?? null, '');
+                if (empty($slug)) {
+                    $slug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $name));
+                }
+                $slug = trim($slug, '-');
+                if (empty($slug)) {
+                    $slug = 'product-' . $row['id'];
+                }
+                // Ensure uniqueness
+                $baseSlug = $slug;
+                $i = 1;
+                while (isset($usedSlugs[$slug])) {
+                    $slug = $baseSlug . '-' . $i++;
+                }
+                $usedSlugs[$slug] = true;
+
+                // Weight is decimal in production, string in RECO
+                $weight = null;
+                if (isset($row['weight']) && $row['weight'] !== null && $row['weight'] !== '0.0000') {
+                    $weight = rtrim(rtrim(sprintf('%.2f', $row['weight']), '0'), '.') . ' kg';
+                }
+
+                $batch[] = [
+                    'id' => (int) $row['id'],
+                    'name' => $name,
+                    'slug' => $slug,
+                    'part_no' => $row['code'] ?? null,
+                    'short_description' => $shortDesc,
+                    'unit' => $row['measure'] ?? null,
+                    'price' => (float) ($row['price_base'] ?? 0),
+                    'weight' => $weight,
+                    'technical_description' => $techDesc,
+                    'machine_text' => null,
+                    'statistic' => null,
+                    'is_active' => $this->toBool($row['active'] ?? 1),
+                    'ready_for_shop' => $this->toBool($row['ready_for_webshop'] ?? 0),
+                    'qty' => isset($row['qty']) ? (int) (float) $row['qty'] : null,
+                    'qty_step' => isset($row['qty_step']) ? (int) (float) $row['qty_step'] : null,
+                    'quote_item_limit' => isset($row['quote_item_limit']) ? (int) (float) $row['quote_item_limit'] : null,
+                    'fixed_qty' => isset($row['fixed_qty']) ? (int) (float) $row['fixed_qty'] : null,
+                    'product_group_id' => isset($row['product_groups_id']) && $row['product_groups_id'] ? (int) $row['product_groups_id'] : null,
+                    'catalog_code' => $row['catalog_code'] ?? null,
+                    'retail_price' => isset($row['price_retail']) ? (float) $row['price_retail'] : null,
+                    'tax_type_id' => isset($row['tax_type_id']) && $row['tax_type_id'] ? (int) $row['tax_type_id'] : null,
+                    'currency' => $currencyCode,
+                    'discount_percent' => isset($row['discount_percentage']) ? (float) $row['discount_percentage'] : null,
+                    'discount_price' => isset($row['discount_price_base']) ? (float) $row['discount_price_base'] : null,
+                    'featured_image_id' => null,
+                    'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                    'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+                ];
+                $this->importedIds['product'][] = (int) $row['id'];
+                $total++;
+            }
+
+            if (!empty($batch)) {
+                $this->importBatch($conn, 'product', $batch);
+                $batch = [];
+            }
+
+            $offset += $this->batchSize;
+            $this->io->writeln(sprintf('  Processed %d rows...', $offset));
+        }
+
+        $this->resetAutoIncrement($conn, 'product');
+        $this->io->writeln(sprintf('  Imported %d products', $total));
+        $this->stats['Product'] = $total;
+    }
+
+    // ─── Level 6: Depends on Level 5 ───────────────────────────────────
+
+    private function importProductProductLinks(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing ProductProductLinks');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM product_product_link_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $parentId = isset($row['parent_product_id']) ? (int) $row['parent_product_id'] :
+                        (isset($row['product_id']) ? (int) $row['product_id'] : null);
+            $childId = isset($row['child_product_id']) ? (int) $row['child_product_id'] :
+                       (isset($row['linked_product_id']) ? (int) $row['linked_product_id'] : null);
+
+            // Only import links for imported products
+            if ($this->storeFilter) {
+                if ($parentId && !in_array($parentId, $this->importedIds['product'] ?? [])) continue;
+                if ($childId && !in_array($childId, $this->importedIds['product'] ?? [])) continue;
+            }
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'parent_product_id' => $parentId,
+                'child_product_id' => $childId,
+                'relation_type_id' => isset($row['relation_type_id']) ? (int) $row['relation_type_id'] :
+                                      (isset($row['type_id']) ? (int) $row['type_id'] : null),
+                'ord' => isset($row['ord']) ? (int) $row['ord'] : null,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d product links (filtered)', count($rows)));
+        $this->importBatch($conn, 'product_product_link', $rows);
+        $this->resetAutoIncrement($conn, 'product_product_link');
+        $this->stats['ProductProductLink'] = count($rows);
+    }
+
+    private function importClientProductPrices(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing ClientProductPrices');
+
+        $offset = 0;
+        $total = 0;
+        $batch = [];
+
+        while (true) {
+            $source = $legacy->fetchAllAssociative(
+                "SELECT * FROM product_account_price_entity ORDER BY id LIMIT {$this->batchSize} OFFSET {$offset}"
+            );
+
+            if (empty($source)) {
+                break;
+            }
+
+            foreach ($source as $row) {
+                $clientId = isset($row['account_id']) ? (int) $row['account_id'] : (isset($row['client_id']) ? (int) $row['client_id'] : null);
+                $productId = isset($row['product_id']) ? (int) $row['product_id'] : null;
+
+                if (!$clientId || !$productId) continue;
+
+                // Filter by imported entities
+                if ($this->storeFilter) {
+                    if (!in_array($clientId, $this->importedIds['client'] ?? [])) continue;
+                    if (!in_array($productId, $this->importedIds['product'] ?? [])) continue;
+                }
+
+                $batch[] = [
+                    'id' => (int) $row['id'],
+                    'client_id' => $clientId,
+                    'product_id' => $productId,
+                    'price' => (float) ($row['price'] ?? $row['price_base'] ?? 0),
+                    'discount_percentage' => isset($row['discount_percentage']) ? (float) $row['discount_percentage'] :
+                                             (isset($row['discount']) ? (float) $row['discount'] : null),
+                    'valid_from' => $row['valid_from'] ?? $row['date_valid_from'] ?? null,
+                    'valid_until' => $row['valid_until'] ?? $row['date_valid_to'] ?? null,
+                    'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                    'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+                ];
+                $total++;
+            }
+
+            if (!empty($batch)) {
+                $this->importBatch($conn, 'client_product_price', $batch);
+                $batch = [];
+            }
+
+            $offset += $this->batchSize;
+            if ($offset % 1000 === 0) {
+                $this->io->writeln(sprintf('  Processed %d rows...', $offset));
+            }
+        }
+
+        $this->resetAutoIncrement($conn, 'client_product_price');
+        $this->io->writeln(sprintf('  Imported %d client product prices', $total));
+        $this->stats['ClientProductPrice'] = $total;
+    }
+
+    private function importOrders(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Orders');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM order_entity');
+        $rows = [];
+        $skippedNoUser = 0;
+
+        foreach ($source as $row) {
+            // Orders have account_id, not user_id — map via accountUserMap
+            $accountId = isset($row['account_id']) ? (int) $row['account_id'] : null;
+            $userId = $this->accountUserMap[$accountId] ?? null;
+
+            if (!$userId) {
+                // Try created_by as username → look up user
+                $skippedNoUser++;
+                continue; // Can't create order without user (FK constraint)
+            }
+
+            $status = 'pending';
+            if (isset($row['order_state_id'])) {
+                $status = $this->orderStateMap[(int) $row['order_state_id']] ?? 'pending';
+            }
+
+            $shippingAddr = $row['account_shipping_street'] ?? null;
+            $billingAddr = $row['account_billing_street'] ?? null;
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'user_id' => $userId,
+                'order_number' => $row['increment_id'] ? (string) $row['increment_id'] : 'ORD-' . $row['id'],
+                'status' => $status,
+                'total_amount' => (float) ($row['base_price_total'] ?? $row['price_total'] ?? 0),
+                'notes' => null,
+                'shipping_address' => $shippingAddr,
+                'billing_address' => $billingAddr,
+                'is_draft' => (int) ($status === 'draft'),
+                'tracking_number' => null,
+                'tracking_carrier' => null,
+                'tracking_url' => null,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+            $this->importedIds['order'][] = (int) $row['id'];
+        }
+
+        if ($skippedNoUser > 0) {
+            $this->io->warning(sprintf('Skipped %d orders with no mapped user', $skippedNoUser));
+        }
+
+        $this->io->writeln(sprintf('  Found %d orders', count($rows)));
+        $this->importBatch($conn, '`order`', $rows);
+        $this->resetAutoIncrement($conn, '`order`');
+        $this->stats['Order'] = count($rows);
+    }
+
+    private function importOrderItems(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing OrderItems');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM order_item_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $orderId = isset($row['order_id']) ? (int) $row['order_id'] : null;
+            $productId = isset($row['product_id']) ? (int) $row['product_id'] : null;
+
+            if (!$orderId || !$productId) continue;
+
+            // Only import items for imported orders and products
+            if (!in_array($orderId, $this->importedIds['order'] ?? [])) continue;
+            if (!in_array($productId, $this->importedIds['product'] ?? [])) continue;
+
+            $qty = (int) (float) ($row['qty'] ?? 1);
+            if ($qty < 1) $qty = 1;
+            $unitPrice = (float) ($row['base_price_item'] ?? $row['price_item'] ?? 0);
+            $subtotal = (float) ($row['base_price_total'] ?? ($qty * $unitPrice));
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'order_ref_id' => $orderId,
+                'product_id' => $productId,
+                'quantity' => $qty,
+                'unit_price' => $unitPrice,
+                'subtotal' => $subtotal,
+                'is_custom_price' => 0,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d order items (filtered)', count($rows)));
+        $this->importBatch($conn, 'order_item', $rows);
+        $this->resetAutoIncrement($conn, 'order_item');
+        $this->stats['OrderItem'] = count($rows);
+    }
+
+    private function importOrderLogs(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing OrderLogs');
+
+        // Order logs might not exist in legacy — check first
+        try {
+            $source = $legacy->fetchAllAssociative('SELECT * FROM order_log_entity');
+        } catch (\Exception $e) {
+            $this->io->note('order_log_entity not found in production, skipping');
+            $this->stats['OrderLog'] = 0;
+            return;
+        }
+
+        $rows = [];
+        foreach ($source as $row) {
+            $orderId = isset($row['order_id']) ? (int) $row['order_id'] : null;
+            if (!$orderId) continue;
+
+            if ($this->storeFilter && !in_array($orderId, $this->importedIds['order'] ?? [])) {
+                continue;
+            }
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'order_id' => $orderId,
+                'changed_by_id' => isset($row['changed_by_id']) ? (int) $row['changed_by_id'] : null,
+                'previous_status' => $row['previous_status'] ?? '',
+                'new_status' => $row['new_status'] ?? '',
+                'comment' => $row['comment'] ?? null,
+                'metadata' => !empty($row['metadata']) ? $row['metadata'] : null,
+                'created_at' => $row['created'] ?? $row['created_at'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d order logs (filtered)', count($rows)));
+        $this->importBatch($conn, 'order_log', $rows);
+        $this->resetAutoIncrement($conn, 'order_log');
+        $this->stats['OrderLog'] = count($rows);
+    }
+
+    private function importProductDiscounts(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing ProductDiscounts');
+
+        try {
+            $source = $legacy->fetchAllAssociative('SELECT * FROM product_discount_entity');
+        } catch (\Exception $e) {
+            $this->io->note('product_discount_entity not found in production, skipping');
+            $this->stats['ProductDiscount'] = 0;
+            return;
+        }
+
+        $rows = [];
+        foreach ($source as $row) {
+            $productId = isset($row['product_id']) ? (int) $row['product_id'] : null;
+            if ($this->storeFilter && $productId && !in_array($productId, $this->importedIds['product'] ?? [])) {
+                continue;
+            }
+
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'product_id' => $productId,
+                'discount_price_base' => $row['discount_price_base'] ?? null,
+                'discount_price_retail' => $row['discount_price_retail'] ?? null,
+                'rebate' => $row['rebate'] ?? null,
+                'type' => isset($row['type']) ? (int) $row['type'] : null,
+                'date_valid_from' => $row['date_valid_from'] ?? null,
+                'date_valid_to' => $row['date_valid_to'] ?? null,
+                'applied_to' => $row['applied_to'] ?? null,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d product discounts (filtered)', count($rows)));
+        $this->importBatch($conn, 'product_discount', $rows);
+        $this->resetAutoIncrement($conn, 'product_discount');
+        $this->stats['ProductDiscount'] = count($rows);
+    }
+
+    private function importImportManuals(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing ImportManuals');
+        $source = $legacy->fetchAllAssociative('SELECT * FROM import_manual_entity');
+        $rows = [];
+
+        foreach ($source as $row) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'type_id' => isset($row['type_id']) ? (int) $row['type_id'] : null,
+                'status_id' => isset($row['status_id']) ? (int) $row['status_id'] : null,
+                'user_id' => isset($row['user_id']) ? (int) $row['user_id'] : null,
+                'file' => $row['file'] ?? null,
+                'filename' => $row['filename'] ?? null,
+                'file_type' => $row['file_type'] ?? null,
+                'size' => $row['size'] ?? null,
+                'file_source' => $row['file_source'] ?? null,
+                'date_started' => $row['date_started'] ?? null,
+                'date_finished' => $row['date_finished'] ?? null,
+                'import_result' => $row['import_result'] ?? null,
+                'rows_imported' => isset($row['rows_imported']) ? (int) $row['rows_imported'] : null,
+                'input_parameters' => $row['input_parameters'] ?? null,
+                'created_at' => $row['created'] ?? $row['created_at'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? $row['updated_at'] ?? date('Y-m-d H:i:s'),
+                'created_by' => $row['created_by'] ?? null,
+                'modified_by' => $row['modified_by'] ?? null,
+            ];
+        }
+
+        $this->io->writeln(sprintf('  Found %d import manuals', count($rows)));
+        $this->importBatch($conn, 'import_manual_entity', $rows);
+        $this->resetAutoIncrement($conn, 'import_manual_entity');
+        $this->stats['ImportManual'] = count($rows);
+    }
+}

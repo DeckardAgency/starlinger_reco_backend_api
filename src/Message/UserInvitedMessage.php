@@ -2,18 +2,16 @@
 
 namespace App\Message;
 
-use Symfony\Component\Uid\Uuid;
-
 class UserInvitedMessage
 {
-    private Uuid $invitationId;
+    private int $invitationId;
 
-    public function __construct(Uuid $invitationId)
+    public function __construct(int $invitationId)
     {
         $this->invitationId = $invitationId;
     }
 
-    public function getInvitationId(): Uuid
+    public function getInvitationId(): int
     {
         return $this->invitationId;
     }

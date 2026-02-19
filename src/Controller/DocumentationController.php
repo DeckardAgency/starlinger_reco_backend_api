@@ -12,7 +12,6 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
-use Symfony\Component\Uid\Uuid;
 
 #[Route('/api/v1')]
 class DocumentationController extends AbstractController
@@ -28,10 +27,10 @@ class DocumentationController extends AbstractController
     #[IsGranted('ROLE_ADMIN')]
     public function restoreRevision(string $id, string $revisionId): JsonResponse
     {
-        try {
-            $docId = Uuid::fromString($id);
-            $revId = Uuid::fromString($revisionId);
-        } catch (\InvalidArgumentException $e) {
+        $docId = (int) $id;
+        $revId = (int) $revisionId;
+
+        if ($docId <= 0 || $revId <= 0) {
             return $this->json(['error' => 'Invalid ID format'], Response::HTTP_BAD_REQUEST);
         }
 
@@ -46,7 +45,7 @@ class DocumentationController extends AbstractController
         }
 
         // Verify the revision belongs to this documentation
-        if ($revision->getDocumentation()->getId()->toRfc4122() !== $documentation->getId()->toRfc4122()) {
+        if ($revision->getDocumentation()->getId() !== $documentation->getId()) {
             return $this->json(['error' => 'Revision does not belong to this documentation'], Response::HTTP_BAD_REQUEST);
         }
 
@@ -71,7 +70,7 @@ class DocumentationController extends AbstractController
         return $this->json([
             'message' => 'Documentation restored successfully',
             'documentation' => [
-                'id' => $documentation->getId()->toRfc4122(),
+                'id' => $documentation->getId(),
                 'title' => $documentation->getTitle(),
                 'slug' => $documentation->getSlug(),
                 'restoredFromRevision' => $revision->getRevisionNumber()

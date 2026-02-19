@@ -35,7 +35,7 @@ class OrderStatusChangeProcessor implements ProcessorInterface
             ($operation->getMethod() === 'PUT' || $operation->getMethod() === 'PATCH')) {
 
             $this->logger->info('Processing order update', [
-                'order_id' => $data->getId()->toRfc4122(),
+                'order_id' => $data->getId(),
                 'operation' => $operation->getMethod()
             ]);
 
@@ -64,7 +64,7 @@ class OrderStatusChangeProcessor implements ProcessorInterface
                             $this->orderStateMachine->apply($data, $transition);
 
                             $this->logger->info('Workflow transition applied', [
-                                'order_id' => $data->getId()->toRfc4122(),
+                                'order_id' => $data->getId(),
                                 'transition' => $transition,
                                 'old_status' => $oldStatus,
                                 'new_status' => $newStatus
@@ -85,7 +85,7 @@ class OrderStatusChangeProcessor implements ProcessorInterface
                         }
                     } catch (TransitionException $e) {
                         $this->logger->error('Workflow transition failed', [
-                            'order_id' => $data->getId()->toRfc4122(),
+                            'order_id' => $data->getId(),
                             'old_status' => $oldStatus,
                             'new_status' => $newStatus,
                             'error' => $e->getMessage()

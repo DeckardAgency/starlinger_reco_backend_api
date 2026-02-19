@@ -92,7 +92,7 @@ class InvitationCreatedProcessor implements ProcessorInterface
         $this->entityManager->flush();
 
         $this->logger->info('Invitation created successfully', [
-            'invitation_id' => $data->getId()->toRfc4122(),
+            'invitation_id' => $data->getId(),
             'email' => $data->getEmail(),
             'token' => $data->getToken()
         ]);
@@ -102,11 +102,10 @@ class InvitationCreatedProcessor implements ProcessorInterface
             $this->messageBus->dispatch(new UserInvitedMessage($data->getId()));
 
             $this->logger->info('UserInvitedMessage dispatched', [
-                'invitation_id' => $data->getId()->toRfc4122()
-            ]);
+                'invitation_id' => $data->getId()            ]);
         } catch (\Exception $e) {
             $this->logger->error('Failed to dispatch UserInvitedMessage', [
-                'invitation_id' => $data->getId()->toRfc4122(),
+                'invitation_id' => $data->getId(),
                 'error' => $e->getMessage()
             ]);
             // Don't fail the request if message dispatch fails

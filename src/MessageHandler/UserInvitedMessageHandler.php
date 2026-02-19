@@ -30,15 +30,14 @@ class UserInvitedMessageHandler
         $invitationId = $message->getInvitationId();
 
         $this->logger->info('Handling UserInvitedMessage', [
-            'invitation_id' => $invitationId->toRfc4122()
-        ]);
+            'invitation_id' => $invitationId        ]);
 
         try {
             $invitation = $this->userInvitationRepository->find($invitationId);
 
             if (!$invitation) {
                 $this->logger->error('User invitation not found in database', [
-                    'invitation_id' => $invitationId->toRfc4122()
+                    'invitation_id' => $invitationId
                 ]);
                 return;
             }
@@ -46,7 +45,7 @@ class UserInvitedMessageHandler
             // Only send email for pending invitations
             if (!$invitation->isPending()) {
                 $this->logger->info('Skipping email for non-pending invitation', [
-                    'invitation_id' => $invitationId->toRfc4122(),
+                    'invitation_id' => $invitationId,
                     'status' => $invitation->getStatus()
                 ]);
                 return;
@@ -113,12 +112,12 @@ class UserInvitedMessageHandler
             $this->mailer->send($email);
 
             $this->logger->info('Invitation email sent successfully', [
-                'invitation_id' => $invitation->getId()->toRfc4122(),
+                'invitation_id' => $invitation->getId(),
                 'email' => $invitation->getEmail()
             ]);
         } catch (\Exception $e) {
             $this->logger->error('Failed to send invitation email', [
-                'invitation_id' => $invitation->getId()->toRfc4122(),
+                'invitation_id' => $invitation->getId(),
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);

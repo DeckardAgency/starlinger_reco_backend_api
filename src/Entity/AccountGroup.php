@@ -16,7 +16,7 @@ use App\Repository\AccountGroupRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Serializer\Annotation\SerializedName;
-use Symfony\Component\Uid\Uuid;
+
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -54,9 +54,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 class AccountGroup
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['account_group:read', 'client:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank]
@@ -78,14 +79,15 @@ class AccountGroup
     #[Groups(['account_group:read'])]
     private ?\DateTimeInterface $updatedAt = null;
 
-    public function __construct()
-    {
-        $this->id = Uuid::v4();
-    }
-
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+        return $this;
     }
 
     public function getName(): ?string

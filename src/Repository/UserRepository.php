@@ -8,7 +8,6 @@ use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\PasswordUpgraderInterface;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<User>
@@ -81,7 +80,7 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
     /**
      * Count orders by user
      */
-    public function countOrdersByUser(Uuid|User $user): int
+    public function countOrdersByUser(int|User $user): int
     {
         if ($user instanceof User) {
             $user = $user->getId();
@@ -91,7 +90,7 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
             ->select('COUNT(o.id) as orderCount')
             ->join('u.orders', 'o')
             ->andWhere('u.id = :userId')
-            ->setParameter('userId', $user, 'uuid')
+            ->setParameter('userId', $user)
             ->getQuery()
             ->getSingleScalarResult();
 

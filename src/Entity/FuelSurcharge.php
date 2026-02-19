@@ -16,7 +16,7 @@ use ApiPlatform\Metadata\Put;
 use App\Repository\FuelSurchargeRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
-use Symfony\Component\Uid\Uuid;
+
 use Gedmo\Mapping\Annotation as Gedmo;
 
 #[ApiResource(
@@ -55,9 +55,10 @@ use Gedmo\Mapping\Annotation as Gedmo;
 class FuelSurcharge
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['fuel_surcharge:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
     #[ORM\Column(length: 255, nullable: true)]
     #[Groups(['fuel_surcharge:read', 'fuel_surcharge:write'])]
@@ -88,13 +89,6 @@ class FuelSurcharge
     #[Groups(['fuel_surcharge:read', 'fuel_surcharge:write'])]
     private ?string $priceBase = null;
 
-    /**
-     * Legacy database ID for migration
-     */
-    #[ORM\Column(type: 'integer', nullable: true)]
-    #[Groups(['fuel_surcharge:read'])]
-    private ?int $legacyId = null;
-
     #[ORM\Column(type: "datetime")]
     #[Gedmo\Timestampable(on: "create")]
     #[Groups(['fuel_surcharge:read'])]
@@ -105,14 +99,15 @@ class FuelSurcharge
     #[Groups(['fuel_surcharge:read'])]
     private ?\DateTimeInterface $updatedAt = null;
 
-    public function __construct()
-    {
-        $this->id = Uuid::v4();
-    }
-
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+        return $this;
     }
 
     public function getName(): ?string
@@ -189,17 +184,6 @@ class FuelSurcharge
     public function setPriceBase(?string $priceBase): static
     {
         $this->priceBase = $priceBase;
-        return $this;
-    }
-
-    public function getLegacyId(): ?int
-    {
-        return $this->legacyId;
-    }
-
-    public function setLegacyId(?int $legacyId): static
-    {
-        $this->legacyId = $legacyId;
         return $this;
     }
 

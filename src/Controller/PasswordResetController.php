@@ -15,7 +15,6 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
-use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -157,16 +156,16 @@ class PasswordResetController extends AbstractController
             return $this->json(['error' => 'User not found', 'id' => $id], Response::HTTP_NOT_FOUND);
         }
 
-        // Get password reset history using native SQL for UUID compatibility
+        // Get password reset history
         $conn = $this->entityManager->getConnection();
         $sql = 'SELECT
-                    HEX(prt.id) as id,
+                    prt.id,
                     prt.status,
                     prt.created_at,
                     prt.expires_at,
                     prt.used_at,
                     prt.ip_address,
-                    HEX(prt.created_by_id) as created_by_id,
+                    prt.created_by_id,
                     cb.email as created_by_email,
                     cb.first_name as created_by_first_name,
                     cb.last_name as created_by_last_name
@@ -177,33 +176,18 @@ class PasswordResetController extends AbstractController
                 LIMIT 20';
 
         $stmt = $conn->prepare($sql);
-        $tokenRows = $stmt->executeQuery(['userId' => $user->getId()->toBinary()])->fetchAllAssociative();
+        $tokenRows = $stmt->executeQuery(['userId' => $user->getId()])->fetchAllAssociative();
 
         $history = array_map(function ($row) {
-            // Convert HEX ID back to UUID format
-            $id = substr($row['id'], 0, 8) . '-' .
-                  substr($row['id'], 8, 4) . '-' .
-                  substr($row['id'], 12, 4) . '-' .
-                  substr($row['id'], 16, 4) . '-' .
-                  substr($row['id'], 20);
-
-            $createdById = $row['created_by_id'] ? (
-                substr($row['created_by_id'], 0, 8) . '-' .
-                substr($row['created_by_id'], 8, 4) . '-' .
-                substr($row['created_by_id'], 12, 4) . '-' .
-                substr($row['created_by_id'], 16, 4) . '-' .
-                substr($row['created_by_id'], 20)
-            ) : null;
-
             return [
-                'id' => strtolower($id),
+                'id' => $row['id'],
                 'status' => $row['status'],
                 'createdAt' => $row['created_at'] ? (new \DateTime($row['created_at']))->format(\DateTimeInterface::ATOM) : null,
                 'expiresAt' => $row['expires_at'] ? (new \DateTime($row['expires_at']))->format(\DateTimeInterface::ATOM) : null,
                 'usedAt' => $row['used_at'] ? (new \DateTime($row['used_at']))->format(\DateTimeInterface::ATOM) : null,
                 'ipAddress' => $row['ip_address'],
                 'createdBy' => $row['created_by_id'] ? [
-                    'id' => strtolower($createdById),
+                    'id' => $row['created_by_id'],
                     'email' => $row['created_by_email'],
                     'firstName' => $row['created_by_first_name'],
                     'lastName' => $row['created_by_last_name'],
@@ -213,7 +197,7 @@ class PasswordResetController extends AbstractController
 
         return $this->json([
             'user' => [
-                'id' => $user->getId()->toRfc4122(),
+                'id' => $user->getId(),
                 'email' => $user->getEmail(),
                 'firstName' => $user->getFirstName(),
                 'lastName' => $user->getLastName(),

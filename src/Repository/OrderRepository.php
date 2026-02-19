@@ -6,7 +6,6 @@ use App\Entity\Order;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<Order>
@@ -45,10 +44,10 @@ class OrderRepository extends ServiceEntityRepository
     /**
      * Find all draft orders for a user
      *
-     * @param Uuid|User $user
+     * @param int|User $user
      * @return Order[]
      */
-    public function findDraftsByUser(Uuid|User $user): array
+    public function findDraftsByUser(int|User $user): array
     {
         if ($user instanceof User) {
             $user = $user->getId();
@@ -63,11 +62,11 @@ class OrderRepository extends ServiceEntityRepository
     /**
      * Find a specific draft order by ID and user
      *
-     * @param Uuid $orderId
-     * @param Uuid|User $user
+     * @param int $orderId
+     * @param int|User $user
      * @return Order|null
      */
-    public function findDraftByIdAndUser(Uuid $orderId, Uuid|User $user): ?Order
+    public function findDraftByIdAndUser(int $orderId, int|User $user): ?Order
     {
         if ($user instanceof User) {
             $user = $user->getId();
@@ -83,7 +82,7 @@ class OrderRepository extends ServiceEntityRepository
     /**
      * Count draft orders for a specific user
      */
-    public function countDraftsByUser(Uuid|User $user): int
+    public function countDraftsByUser(int|User $user): int
     {
         if ($user instanceof User) {
             $user = $user->getId();
@@ -112,10 +111,10 @@ class OrderRepository extends ServiceEntityRepository
     /**
      * Find orders by user
      *
-     * @param Uuid|User $user
+     * @param int|User $user
      * @return Order[]
      */
-    public function findByUser(Uuid|User $user): array
+    public function findByUser(int|User $user): array
     {
         if ($user instanceof User) {
             $user = $user->getId();
@@ -127,11 +126,11 @@ class OrderRepository extends ServiceEntityRepository
     /**
      * Find orders by user and status
      *
-     * @param Uuid|User $user
+     * @param int|User $user
      * @param string $status
      * @return Order[]
      */
-    public function findByUserAndStatus(Uuid|User $user, string $status): array
+    public function findByUserAndStatus(int|User $user, string $status): array
     {
         if ($user instanceof User) {
             $user = $user->getId();
@@ -166,12 +165,12 @@ class OrderRepository extends ServiceEntityRepository
     /**
      * Find orders by user with pagination
      *
-     * @param Uuid|User $user
+     * @param int|User $user
      * @param int $page
      * @param int $limit
      * @return Order[]
      */
-    public function findByUserPaginated(Uuid|User $user, int $page = 1, int $limit = 10): array
+    public function findByUserPaginated(int|User $user, int $page = 1, int $limit = 10): array
     {
         if ($user instanceof User) {
             $user = $user->getId();
@@ -228,7 +227,7 @@ class OrderRepository extends ServiceEntityRepository
     /**
      * Count orders by user
      */
-    public function countByUser(Uuid|User $user): int
+    public function countByUser(int|User $user): int
     {
         if ($user instanceof User) {
             $user = $user->getId();
@@ -240,16 +239,16 @@ class OrderRepository extends ServiceEntityRepository
     /**
      * Find orders that contain a specific product
      *
-     * @param Uuid $productId
+     * @param int $productId
      * @return Order[]
      */
-    public function findOrdersContainingProduct(Uuid $productId): array
+    public function findOrdersContainingProduct(int $productId): array
     {
         return $this->createQueryBuilder('o')
             ->join('o.items', 'i')
             ->join('i.product', 'p')
             ->andWhere('p.id = :productId')
-            ->setParameter('productId', $productId, 'uuid')
+            ->setParameter('productId', $productId)
             ->orderBy('o.createdAt', 'DESC')
             ->getQuery()
             ->getResult();
@@ -277,7 +276,7 @@ class OrderRepository extends ServiceEntityRepository
     /**
      * Calculate total revenue by user
      */
-    public function calculateTotalRevenueByUser(Uuid|User $user): float
+    public function calculateTotalRevenueByUser(int|User $user): float
     {
         if ($user instanceof User) {
             $user = $user->getId();
@@ -287,7 +286,7 @@ class OrderRepository extends ServiceEntityRepository
             ->select('SUM(o.totalAmount) as totalRevenue')
             ->andWhere('o.user = :userId')
             ->andWhere('o.status != :canceledStatus')
-            ->setParameter('userId', $user, 'uuid')
+            ->setParameter('userId', $user)
             ->setParameter('canceledStatus', Order::STATUS_CANCELED)
             ->getQuery()
             ->getSingleScalarResult();

@@ -14,7 +14,6 @@ use ApiPlatform\Metadata\Put;
 use App\Repository\ProductDiscountRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
-use Symfony\Component\Uid\Uuid;
 use Gedmo\Mapping\Annotation as Gedmo;
 
 #[ApiResource(
@@ -50,13 +49,14 @@ use Gedmo\Mapping\Annotation as Gedmo;
 class ProductDiscount
 {
     #[ORM\Id]
-    #[ORM\Column(type: "uuid", unique: true)]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: 'integer')]
     #[Groups(['product_discount:read'])]
-    private ?Uuid $id = null;
+    private ?int $id = null;
 
-    #[ORM\Column(name: 'product_id', type: 'string', length: 36)]
+    #[ORM\Column(name: 'product_id', type: 'integer', nullable: true)]
     #[Groups(['product_discount:read', 'product_discount:write'])]
-    private ?string $productId = null;
+    private ?int $productId = null;
 
     #[ORM\Column(name: 'discount_price_base', type: 'decimal', precision: 12, scale: 4, nullable: true)]
     #[Groups(['product_discount:read', 'product_discount:write'])]
@@ -96,22 +96,23 @@ class ProductDiscount
     #[Groups(['product_discount:read'])]
     private ?\DateTimeInterface $updatedAt = null;
 
-    public function __construct()
-    {
-        $this->id = Uuid::v4();
-    }
-
-    public function getId(): ?Uuid
+    public function getId(): ?int
     {
         return $this->id;
     }
 
-    public function getProductId(): ?string
+    public function setId(int $id): static
+    {
+        $this->id = $id;
+        return $this;
+    }
+
+    public function getProductId(): ?int
     {
         return $this->productId;
     }
 
-    public function setProductId(?string $productId): static
+    public function setProductId(?int $productId): static
     {
         $this->productId = $productId;
         return $this;

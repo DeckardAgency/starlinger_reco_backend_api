@@ -38,7 +38,7 @@ class OrderCreatedMessageHandler
         $modifiedBy = $metadata['modifiedBy'] ?? null;
 
         $this->logger->info('Handling OrderCreatedMessage', [
-            'order_id' => $orderId->toRfc4122(),
+            'order_id' => $orderId,
             'metadata' => $metadata
         ]);
 
@@ -47,7 +47,7 @@ class OrderCreatedMessageHandler
 
             if (!$order) {
                 $this->logger->error('Order not found in database', [
-                    'order_id' => $orderId->toRfc4122()
+                    'order_id' => $orderId
                 ]);
                 return;
             }
@@ -64,7 +64,7 @@ class OrderCreatedMessageHandler
             // Skip notifications for draft orders
             if ($order->isDraft() || $order->getStatus() === Order::STATUS_DRAFT) {
                 $this->logger->info('Skipping notifications for draft order', [
-                    'order_id' => $orderId->toRfc4122()
+                    'order_id' => $orderId
                 ]);
                 return;
             }
@@ -90,8 +90,8 @@ class OrderCreatedMessageHandler
                     $this->entityManager->flush();
 
                     $this->logger->info('Order creation logged', [
-                        'order_id' => $orderId->toRfc4122(),
-                        'log_id' => $log->getId()->toRfc4122(),
+                        'order_id' => $orderId,
+                        'log_id' => $log->getId(),
                         'created_by_name' => $this->getModifiedByName($modifiedBy)
                     ]);
                 }
@@ -162,8 +162,7 @@ class OrderCreatedMessageHandler
                 'error' => $e->getMessage(),
                 'error_type' => get_class($e),
                 'trace' => $e->getTraceAsString(),
-                'order_id' => $order->getId()->toRfc4122()
-            ]);
+                'order_id' => $order->getId()            ]);
 
             // Don't re-throw - email failure shouldn't break the process
         }
@@ -176,7 +175,7 @@ class OrderCreatedMessageHandler
 
             if (!$user || !$user->getEmail()) {
                 $this->logger->warning('Cannot send customer notification: no user or email', [
-                    'order_id' => $order->getId()->toRfc4122(),
+                    'order_id' => $order->getId(),
                     'order_number' => $order->getOrderNumber()
                 ]);
                 return;
@@ -241,8 +240,7 @@ class OrderCreatedMessageHandler
                 'error' => $e->getMessage(),
                 'error_type' => get_class($e),
                 'trace' => $e->getTraceAsString(),
-                'order_id' => $order->getId()->toRfc4122()
-            ]);
+                'order_id' => $order->getId()            ]);
 
             // Don't re-throw - email failure shouldn't break the process
         }
