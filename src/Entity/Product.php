@@ -78,7 +78,7 @@ use ApiPlatform\OpenApi\Model;
     normalizationContext: ['groups' => ['product:read', 'media_item:read']],
     denormalizationContext: ['groups' => ['product:write', 'media_item:write']]
 )]
-#[ApiFilter(OrderFilter::class, properties: ['name', 'createdAt'])]
+#[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'createdAt', 'partNo', 'shortDescription', 'qty', 'qtyStep'])]
 #[ApiFilter(SearchFilter::class, properties: [
     'id' => 'exact',
     'slug' => 'exact',

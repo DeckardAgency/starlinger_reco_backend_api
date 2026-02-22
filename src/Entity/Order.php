@@ -142,7 +142,7 @@ use Symfony\Component\Serializer\Annotation\Groups;
     normalizationContext: ['groups' => ['order:read']],
     denormalizationContext: ['groups' => ['order:write']]
 )]
-#[ApiFilter(OrderFilter::class, properties: ['name', 'createdAt'])]
+#[ApiFilter(OrderFilter::class, properties: ['id', 'orderNumber', 'createdAt', 'status', 'totalAmount'])]
 #[ApiFilter(SearchFilter::class, properties: [
     'user.email' => 'exact',
     'status' => 'exact',

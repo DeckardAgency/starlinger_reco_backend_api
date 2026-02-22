@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use ApiPlatform\Doctrine\Orm\Filter\BooleanFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
@@ -49,6 +50,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'name' => 'partial'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isActive'])]
+#[ApiFilter(OrderFilter::class, properties: ['name'])]
 #[ORM\Entity(repositoryClass: AccountGroupRepository::class)]
 #[ORM\Table(name: 'account_group')]
 class AccountGroup

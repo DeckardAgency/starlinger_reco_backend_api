@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use ApiPlatform\Doctrine\Orm\Filter\BooleanFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
@@ -50,6 +51,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'remoteCode' => 'exact'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isActive'])]
+#[ApiFilter(OrderFilter::class, properties: ['name', 'percent'])]
 #[ORM\Entity(repositoryClass: TaxTypeRepository::class)]
 #[ORM\Table]
 class TaxType

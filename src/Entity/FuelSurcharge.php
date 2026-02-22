@@ -4,6 +4,7 @@ namespace App\Entity;
 
 use ApiPlatform\Doctrine\Orm\Filter\DateFilter;
 use ApiPlatform\Doctrine\Orm\Filter\NumericFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
@@ -50,6 +51,7 @@ use Gedmo\Mapping\Annotation as Gedmo;
 ])]
 #[ApiFilter(DateFilter::class, properties: ['date'])]
 #[ApiFilter(NumericFilter::class, properties: ['fuelSurcharge'])]
+#[ApiFilter(OrderFilter::class, properties: ['name', 'date', 'fuelSurcharge'])]
 #[ORM\Entity(repositoryClass: FuelSurchargeRepository::class)]
 #[ORM\Table]
 class FuelSurcharge

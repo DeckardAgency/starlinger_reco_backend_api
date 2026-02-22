@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use ApiPlatform\Doctrine\Orm\Filter\NumericFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
@@ -49,6 +50,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'deliveryType.id' => 'exact'
 ])]
 #[ApiFilter(NumericFilter::class, properties: ['dhlZone', 'sizeFrom', 'sizeTo'])]
+#[ApiFilter(OrderFilter::class, properties: ['name', 'dhlZone', 'sizeFrom', 'sizeTo', 'priceBase', 'stepStartsAt', 'forEveryNextSize', 'priceBaseStep'])]
 #[ORM\Entity(repositoryClass: DeliveryPriceRepository::class)]
 #[ORM\Table]
 class DeliveryPrice

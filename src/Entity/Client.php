@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use ApiPlatform\Doctrine\Orm\Filter\BooleanFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
@@ -56,6 +57,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'accountGroup.id' => 'exact'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isArchived', 'isActive'])]
+#[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'code', 'vatNumber', 'email', 'isActive', 'purchaseLimit', 'amountSpent'])]
 #[ORM\Entity(repositoryClass: ClientRepository::class)]
 #[ORM\Table]
 #[ORM\Index(name: "idx_client_code", columns: ["code"])]

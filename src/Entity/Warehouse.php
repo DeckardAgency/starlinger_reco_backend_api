@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use ApiPlatform\Doctrine\Orm\Filter\BooleanFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
@@ -54,6 +55,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'city' => 'partial'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isActive', 'showAsLocation'])]
+#[ApiFilter(OrderFilter::class, properties: ['name', 'city', 'isActive'])]
 #[ORM\Entity(repositoryClass: WarehouseRepository::class)]
 #[ORM\Table]
 class Warehouse

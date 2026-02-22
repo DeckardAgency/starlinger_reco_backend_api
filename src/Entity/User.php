@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
@@ -38,6 +39,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     denormalizationContext: ['groups' => ['user:create', 'user:update']],
 )]
 #[ApiFilter(SearchFilter::class, properties: ['email' => 'exact', 'client.code' => 'exact', 'roles' => 'partial'])]
+#[ApiFilter(OrderFilter::class, properties: ['id', 'email', 'firstName', 'lastName'])]
 #[ApiFilter(NoClientFilter::class)]
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: '`user`')]

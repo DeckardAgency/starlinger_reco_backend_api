@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use ApiPlatform\Doctrine\Orm\Filter\BooleanFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
@@ -51,6 +52,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'iso31661Alpha3Code' => 'exact'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['europeanUnion', 'isActive'])]
+#[ApiFilter(OrderFilter::class, properties: ['name', 'code'])]
 #[ORM\Entity(repositoryClass: CountryRepository::class)]
 #[ORM\Table]
 #[ORM\Index(name: "idx_country_code", columns: ["code"])]

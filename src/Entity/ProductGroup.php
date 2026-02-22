@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use ApiPlatform\Doctrine\Orm\Filter\BooleanFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
@@ -54,6 +55,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'productGroupCode' => 'exact'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isActive', 'showOnHomepage'])]
+#[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'productGroupCode', 'isActive', 'showOnHomepage'])]
 #[ORM\Entity(repositoryClass: ProductGroupRepository::class)]
 #[ORM\Table]
 #[ORM\Index(name: "idx_product_group_slug", columns: ["slug"])]

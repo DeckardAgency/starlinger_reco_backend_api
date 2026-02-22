@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use ApiPlatform\Doctrine\Orm\Filter\BooleanFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
@@ -53,6 +54,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'remoteCode' => 'exact'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isActive', 'isDelivery', 'allowRecurringPayment'])]
+#[ApiFilter(OrderFilter::class, properties: ['name', 'isActive'])]
 #[ORM\Entity(repositoryClass: DeliveryTypeRepository::class)]
 #[ORM\Table]
 class DeliveryType
