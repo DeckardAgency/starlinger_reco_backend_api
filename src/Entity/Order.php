@@ -155,8 +155,10 @@ class Order
 {
     public const STATUS_DRAFT = 'draft';
     public const STATUS_SUBMITTED = 'submitted';
-    public const STATUS_CONFIRMED = 'confirmed';
-    public const STATUS_DISPATCHED = 'dispatched';
+    public const STATUS_IN_REVIEW = 'in_review';
+    public const STATUS_MORE_INFO = 'more_info';
+    public const STATUS_INFORMATION_PROVIDED = 'information_provided';
+    public const STATUS_IN_PROGRESS = 'in_progress';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_CANCELED = 'canceled';
 
@@ -252,6 +254,14 @@ class Order
     #[Groups(['order:read'])]
     private ?User $dispatchedBy = null;
 
+    /**
+     * @var Collection<int, OrderInfoRequest>
+     */
+    #[ORM\OneToMany(targetEntity: OrderInfoRequest::class, mappedBy: 'order', cascade: ['persist', 'remove'])]
+    #[ORM\OrderBy(['createdAt' => 'DESC'])]
+    #[Groups(['order:read'])]
+    private Collection $infoRequests;
+
     // Cancellation fields (for canceled status)
     #[ORM\Column(type: "text", nullable: true)]
     #[Groups(['order:read', 'order:write'])]
@@ -272,6 +282,7 @@ class Order
         $this->orderNumber = $this->generateOrderNumber();
         $this->lastSavedAt = new \DateTime();
         $this->logs = new ArrayCollection();
+        $this->infoRequests = new ArrayCollection();
     }
 
     private function generateOrderNumber(): string
@@ -674,6 +685,49 @@ class Order
     {
         $this->cancelledBy = $cancelledBy;
         return $this;
+    }
+
+    /**
+     * @return Collection<int, OrderInfoRequest>
+     */
+    public function getInfoRequests(): Collection
+    {
+        return $this->infoRequests;
+    }
+
+    public function addInfoRequest(OrderInfoRequest $infoRequest): static
+    {
+        if (!$this->infoRequests->contains($infoRequest)) {
+            $this->infoRequests->add($infoRequest);
+            $infoRequest->setOrder($this);
+        }
+        return $this;
+    }
+
+    public function removeInfoRequest(OrderInfoRequest $infoRequest): static
+    {
+        if ($this->infoRequests->removeElement($infoRequest)) {
+            if ($infoRequest->getOrder() === $this) {
+                $infoRequest->setOrder(null);
+            }
+        }
+        return $this;
+    }
+
+    /**
+     * Check if all info requests are accepted
+     */
+    public function allInfoRequestsAccepted(): bool
+    {
+        if ($this->infoRequests->isEmpty()) {
+            return true;
+        }
+        foreach ($this->infoRequests as $request) {
+            if (!$request->isAccepted()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

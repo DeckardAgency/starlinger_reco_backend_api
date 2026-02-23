@@ -192,8 +192,10 @@ class DashboardService
 
         $statusLabels = [
             Order::STATUS_SUBMITTED => 'Submitted',
-            Order::STATUS_CONFIRMED => 'Confirmed',
-            Order::STATUS_DISPATCHED => 'Dispatched',
+            Order::STATUS_IN_REVIEW => 'In Review',
+            Order::STATUS_MORE_INFO => 'More Info Needed',
+            Order::STATUS_INFORMATION_PROVIDED => 'Info Provided',
+            Order::STATUS_IN_PROGRESS => 'In Progress',
             Order::STATUS_COMPLETED => 'Completed',
             Order::STATUS_CANCELED => 'Canceled'
         ];

@@ -106,11 +106,10 @@ class LoadTestDataCommand extends Command
             $io->table(
                 ['Email', 'Role', 'Description'],
                 [
-                    ['super@starlinger.com', 'ROLE_SUPER_ADMIN', 'Full system access'],
+                    ['super@starlinger.com', 'ROLE_ADMIN', 'Full system access'],
                     ['admin@starlinger.com', 'ROLE_ADMIN', 'Admin access'],
                     ['clientadmin@starlinger.com', 'ROLE_CLIENT_ADMIN', 'Client administrator'],
                     ['recouser@starlinger.com', 'ROLE_CLIENT', 'Customer user (default)'],
-                    ['viewer@starlinger.com', 'ROLE_VIEWER', 'Read-only access'],
                 ]
             );
             $io->note('Client for client roles: Starlinger Development (STL-DEV)');
@@ -466,7 +465,7 @@ class LoadTestDataCommand extends Command
                 'email' => 'super@starlinger.com',
                 'firstName' => 'Super',
                 'lastName' => 'Admin',
-                'roles' => ['ROLE_SUPER_ADMIN'],
+                'roles' => ['ROLE_ADMIN'],
                 'phone' => '+43 1 234 0001',
                 'needsClient' => false,
             ],
@@ -492,14 +491,6 @@ class LoadTestDataCommand extends Command
                 'lastName' => 'Developer',
                 'roles' => ['ROLE_USER', 'ROLE_CLIENT'],
                 'phone' => '+43 1 234 5678',
-                'needsClient' => true,
-            ],
-            [
-                'email' => 'viewer@starlinger.com',
-                'firstName' => 'Read',
-                'lastName' => 'Only',
-                'roles' => ['ROLE_VIEWER'],
-                'phone' => '+43 1 234 0004',
                 'needsClient' => true,
             ],
         ];

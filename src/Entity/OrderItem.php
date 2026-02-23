@@ -11,6 +11,8 @@ use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Delete;
 use App\Repository\OrderItemRepository;
 use DateTimeInterface;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Gedmo\Mapping\Annotation as Gedmo;
@@ -44,6 +46,10 @@ use ApiPlatform\Metadata\ApiProperty;
 )]
 class OrderItem
 {
+    public const INFO_STATUS_NONE = 'none';
+    public const INFO_STATUS_CLEAR = 'clear';
+    public const INFO_STATUS_PENDING_INFO = 'pending_info';
+    public const INFO_STATUS_INFO_PROVIDED = 'info_provided';
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column(type: 'integer')]
@@ -88,8 +94,21 @@ class OrderItem
     #[Groups(['order_item:read'])]
     private bool $isCustomPrice = false;
 
+    #[ORM\Column(length: 20, options: ['default' => 'none'])]
+    #[Groups(['order_item:read', 'order:read'])]
+    private string $infoStatus = self::INFO_STATUS_NONE;
+
+    /**
+     * @var Collection<int, OrderInfoRequest>
+     */
+    #[ORM\OneToMany(targetEntity: OrderInfoRequest::class, mappedBy: 'orderItem', cascade: ['persist', 'remove'])]
+    #[ORM\OrderBy(['createdAt' => 'DESC'])]
+    #[Groups(['order_item:read'])]
+    private Collection $infoRequests;
+
     public function __construct()
     {
+        $this->infoRequests = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -196,6 +215,44 @@ class OrderItem
     public function setIsCustomPrice(bool $isCustomPrice): static
     {
         $this->isCustomPrice = $isCustomPrice;
+        return $this;
+    }
+
+    public function getInfoStatus(): string
+    {
+        return $this->infoStatus;
+    }
+
+    public function setInfoStatus(string $infoStatus): static
+    {
+        $this->infoStatus = $infoStatus;
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, OrderInfoRequest>
+     */
+    public function getInfoRequests(): Collection
+    {
+        return $this->infoRequests;
+    }
+
+    public function addInfoRequest(OrderInfoRequest $infoRequest): static
+    {
+        if (!$this->infoRequests->contains($infoRequest)) {
+            $this->infoRequests->add($infoRequest);
+            $infoRequest->setOrderItem($this);
+        }
+        return $this;
+    }
+
+    public function removeInfoRequest(OrderInfoRequest $infoRequest): static
+    {
+        if ($this->infoRequests->removeElement($infoRequest)) {
+            if ($infoRequest->getOrderItem() === $this) {
+                $infoRequest->setOrderItem(null);
+            }
+        }
         return $this;
     }
 }

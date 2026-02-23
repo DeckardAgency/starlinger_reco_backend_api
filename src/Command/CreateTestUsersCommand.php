@@ -36,11 +36,10 @@ class CreateTestUsersCommand extends Command
         $password = $input->getOption('password');
 
         $testUsers = [
-            ['email' => 'super@starlinger.com', 'firstName' => 'Super', 'lastName' => 'Admin', 'roles' => ['ROLE_SUPER_ADMIN']],
+            ['email' => 'super@starlinger.com', 'firstName' => 'Super', 'lastName' => 'Admin', 'roles' => ['ROLE_ADMIN']],
             ['email' => 'admin@starlinger.com', 'firstName' => 'Admin', 'lastName' => 'User', 'roles' => ['ROLE_ADMIN']],
             ['email' => 'clientadmin@starlinger.com', 'firstName' => 'Client', 'lastName' => 'Admin', 'roles' => ['ROLE_CLIENT_ADMIN']],
             ['email' => 'recouser@starlinger.com', 'firstName' => 'Reco', 'lastName' => 'User', 'roles' => ['ROLE_USER']],
-            ['email' => 'viewer@starlinger.com', 'firstName' => 'Viewer', 'lastName' => 'User', 'roles' => ['ROLE_VIEWER']],
         ];
 
         $repo = $this->em->getRepository(User::class);

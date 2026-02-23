@@ -110,17 +110,31 @@ class OrderStatusChangeProcessor implements ProcessorInterface
         $transitionMap = [
             Order::STATUS_DRAFT => [
                 Order::STATUS_SUBMITTED => 'submit',
+                Order::STATUS_CANCELED => 'cancel',
             ],
             Order::STATUS_SUBMITTED => [
-                Order::STATUS_CONFIRMED => 'confirm',
+                Order::STATUS_IN_REVIEW => 'review',
+                Order::STATUS_MORE_INFO => 'request_more_info',
+                Order::STATUS_IN_PROGRESS => 'start_progress',
                 Order::STATUS_CANCELED => 'cancel',
             ],
-            Order::STATUS_CONFIRMED => [
-                Order::STATUS_DISPATCHED => 'dispatch',
+            Order::STATUS_IN_REVIEW => [
+                Order::STATUS_MORE_INFO => 'request_more_info',
+                Order::STATUS_IN_PROGRESS => 'start_progress',
                 Order::STATUS_CANCELED => 'cancel',
             ],
-            Order::STATUS_DISPATCHED => [
+            Order::STATUS_MORE_INFO => [
+                Order::STATUS_INFORMATION_PROVIDED => 'provide_information',
+                Order::STATUS_CANCELED => 'cancel',
+            ],
+            Order::STATUS_INFORMATION_PROVIDED => [
+                Order::STATUS_MORE_INFO => 'request_more_info',
+                Order::STATUS_IN_PROGRESS => 'start_progress',
+                Order::STATUS_CANCELED => 'cancel',
+            ],
+            Order::STATUS_IN_PROGRESS => [
                 Order::STATUS_COMPLETED => 'complete',
+                Order::STATUS_CANCELED => 'cancel',
             ],
         ];
 

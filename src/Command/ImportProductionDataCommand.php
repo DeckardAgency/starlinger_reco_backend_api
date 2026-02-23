@@ -70,13 +70,36 @@ class ImportProductionDataCommand extends Command
             // Build lookup maps
             $this->buildLookupMaps($legacy);
 
+            // Truncate all target tables before import (reverse dependency order)
+            if (!$this->dryRun && !$entityFilter) {
+                $this->io->section('Clearing existing data');
+                $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 0');
+                $tablesToTruncate = [
+                    'product_discount', 'import_manual_entity', 'order_log', 'order_item', '`order`',
+                    'order_info_message', 'order_info_request',
+                    'client_product_price', 'product_product_link',
+                    'fuel_surcharge', 'delivery_price', 'product', 'product_group',
+                    'delivery_type', 'address', '`user`', 'warehouse',
+                    'client', 'country',
+                    'discount', 'packaging_price', 'payment_type',
+                    'import_manual_type_entity', 'import_manual_status_entity', 'account_group', 'tax_type',
+                ];
+                foreach ($tablesToTruncate as $table) {
+                    try {
+                        $conn->executeStatement("TRUNCATE TABLE {$table}");
+                    } catch (\Exception $e) {
+                        // Table may not exist yet, skip
+                    }
+                }
+                $conn->executeStatement('SET FOREIGN_KEY_CHECKS = 1');
+                $this->io->writeln('  All tables truncated');
+            }
+
             // Import in dependency order
             $importOrder = [
                 // Level 1 — Independent
                 'tax_type' => 'importTaxTypes',
                 'account_group' => 'importAccountGroups',
-                'department' => 'importDepartments',
-                'contact_title' => 'importContactTitles',
                 'import_manual_status' => 'importImportManualStatuses',
                 'import_manual_type' => 'importImportManualTypes',
                 'payment_type' => 'importPaymentTypes',
@@ -87,7 +110,6 @@ class ImportProductionDataCommand extends Command
                 'client' => 'importClients',
                 // Level 3
                 'warehouse' => 'importWarehouses',
-                'contact' => 'importContacts',
                 'user' => 'importUsers',
                 'address' => 'importAddresses',
                 // Level 4
@@ -376,55 +398,6 @@ class ImportProductionDataCommand extends Command
         $this->stats['AccountGroup'] = count($rows);
     }
 
-    private function importDepartments(Connection $legacy, Connection $conn, string $defaultPassword): void
-    {
-        $this->io->section('Importing Departments');
-        $source = $legacy->fetchAllAssociative('SELECT * FROM department_entity');
-        $rows = [];
-
-        foreach ($source as $row) {
-            $rows[] = [
-                'id' => (int) $row['id'],
-                'name' => $row['name'] ?? null,
-                'entity_type_id' => (int) ($row['entity_type_id'] ?? 0),
-                'attribute_set_id' => (int) ($row['attribute_set_id'] ?? 0),
-                'created' => $row['created'] ?? date('Y-m-d H:i:s'),
-                'modified' => $row['modified'] ?? date('Y-m-d H:i:s'),
-                'entity_state_id' => isset($row['entity_state_id']) ? (int) $row['entity_state_id'] : null,
-            ];
-        }
-
-        $this->io->writeln(sprintf('  Found %d departments', count($rows)));
-        $this->importBatch($conn, 'department_entity', $rows);
-        $this->resetAutoIncrement($conn, 'department_entity');
-        $this->stats['Department'] = count($rows);
-    }
-
-    private function importContactTitles(Connection $legacy, Connection $conn, string $defaultPassword): void
-    {
-        $this->io->section('Importing ContactTitles');
-        $source = $legacy->fetchAllAssociative('SELECT * FROM contact_title_entity');
-        $rows = [];
-
-        foreach ($source as $row) {
-            $rows[] = [
-                'id' => (int) $row['id'],
-                'name' => $row['name'] ?? null,
-                'uid' => $row['uid'] ?? null,
-                'is_custom' => isset($row['is_custom']) ? (int) $row['is_custom'] : null,
-                'entity_type_id' => (int) ($row['entity_type_id'] ?? 0),
-                'attribute_set_id' => (int) ($row['attribute_set_id'] ?? 0),
-                'created' => $row['created'] ?? date('Y-m-d H:i:s'),
-                'modified' => $row['modified'] ?? date('Y-m-d H:i:s'),
-                'entity_state_id' => isset($row['entity_state_id']) ? (int) $row['entity_state_id'] : null,
-            ];
-        }
-
-        $this->io->writeln(sprintf('  Found %d contact titles', count($rows)));
-        $this->importBatch($conn, 'contact_title_entity', $rows);
-        $this->resetAutoIncrement($conn, 'contact_title_entity');
-        $this->stats['ContactTitle'] = count($rows);
-    }
 
     private function importImportManualStatuses(Connection $legacy, Connection $conn, string $defaultPassword): void
     {
@@ -714,80 +687,34 @@ class ImportProductionDataCommand extends Command
         $this->stats['Warehouse'] = count($rows);
     }
 
-    private function importContacts(Connection $legacy, Connection $conn, string $defaultPassword): void
-    {
-        $this->io->section('Importing Contacts');
-        $source = $legacy->fetchAllAssociative('SELECT * FROM contact_entity');
-        $rows = [];
-
-        foreach ($source as $row) {
-            // Only import contacts for imported clients
-            $accountId = isset($row['account_id']) ? (int) $row['account_id'] : null;
-            if ($this->storeFilter && $accountId && !in_array($accountId, $this->importedIds['client'] ?? [])) {
-                continue;
-            }
-
-            $rows[] = [
-                'id' => (int) $row['id'],
-                'first_name' => $row['first_name'] ?? null,
-                'last_name' => $row['last_name'] ?? null,
-                'full_name' => $row['full_name'] ?? null,
-                'email' => $row['email'] ?? null,
-                'phone' => $row['phone'] ?? null,
-                'phone_2' => $row['phone_2'] ?? null,
-                'home_phone' => $row['home_phone'] ?? null,
-                'secondary_email' => $row['secondary_email'] ?? null,
-                'fax' => $row['fax'] ?? null,
-                'date_of_birth' => $row['date_of_birth'] ?? null,
-                'is_active' => isset($row['is_active']) ? (int) $row['is_active'] : null,
-                'description' => $row['description'] ?? null,
-                'account_id' => $accountId,
-                'title_id' => isset($row['title_id']) ? (int) $row['title_id'] : null,
-                'department_id' => isset($row['department_id']) ? (int) $row['department_id'] : null,
-                'support_person_id' => isset($row['support_person_id']) ? (int) $row['support_person_id'] : null,
-                'level_of_support_id' => isset($row['level_of_support_id']) ? (int) $row['level_of_support_id'] : null,
-                'entity_type_id' => (int) ($row['entity_type_id'] ?? 0),
-                'attribute_set_id' => (int) ($row['attribute_set_id'] ?? 0),
-                'created' => $row['created'] ?? date('Y-m-d H:i:s'),
-                'modified' => $row['modified'] ?? date('Y-m-d H:i:s'),
-                'entity_state_id' => isset($row['entity_state_id']) ? (int) $row['entity_state_id'] : null,
-            ];
-        }
-
-        $this->io->writeln(sprintf('  Found %d contacts (filtered)', count($rows)));
-        $this->importBatch($conn, 'contact_entity', $rows);
-        $this->resetAutoIncrement($conn, 'contact_entity');
-        $this->stats['Contact'] = count($rows);
-    }
 
     private function importUsers(Connection $legacy, Connection $conn, string $defaultPassword): void
     {
-        $this->io->section('Importing Users');
-        $source = $legacy->fetchAllAssociative('SELECT * FROM user_entity WHERE entity_state_id = 1 OR entity_state_id IS NULL');
+        $this->io->section('Importing Users (from production contacts + user_entity)');
 
-        // Build account→user map via account_entity.owner_id
+        $tempUser = new \App\Entity\User();
+        $hashedPassword = $this->passwordHasher->hashPassword($tempUser, $defaultPassword);
+        $rows = [];
+        $usedEmails = [];
+        $nextId = 1;
+
+        // Step 1: Import existing user_entity records (admin/internal users)
+        $userSource = $legacy->fetchAllAssociative('SELECT * FROM user_entity WHERE entity_state_id = 1 OR entity_state_id IS NULL');
+
+        // Build account→user map via account_entity.owner_id (for fallback)
         $accountOwners = $legacy->fetchAllAssociative('SELECT id, owner_id FROM account_entity WHERE owner_id IS NOT NULL AND owner_id > 0');
-        $userToAccountMap = []; // user_id → account_id
+        $ownerToAccountMap = []; // owner_user_id → account_id
         foreach ($accountOwners as $ao) {
-            $userId = (int) $ao['owner_id'];
+            $ownerId = (int) $ao['owner_id'];
             $accountId = (int) $ao['id'];
-            // First account wins for this user
-            if (!isset($userToAccountMap[$userId])) {
-                $userToAccountMap[$userId] = $accountId;
-            }
-            // Build reverse map: account → user (first user wins)
-            if (!isset($this->accountUserMap[$accountId])) {
-                $this->accountUserMap[$accountId] = $userId;
+            if (!isset($ownerToAccountMap[$ownerId])) {
+                $ownerToAccountMap[$ownerId] = $accountId;
             }
         }
 
-        $rows = [];
-        $tempUser = new \App\Entity\User();
-        $hashedPassword = $this->passwordHasher->hashPassword($tempUser, $defaultPassword);
-
-        foreach ($source as $row) {
+        foreach ($userSource as $row) {
             $userId = (int) $row['id'];
-            $clientId = $userToAccountMap[$userId] ?? null;
+            $email = $row['email'] ?? 'user-' . $row['id'] . '@imported.local';
 
             // Parse roles — FOS User Bundle stores as PHP serialized or JSON
             $roles = ['ROLE_USER'];
@@ -802,19 +729,19 @@ class ImportProductionDataCommand extends Command
                     }
                 }
             }
-
-            // Map FOS roles to RECO roles
             $roles = $this->mapFosRoles($roles);
+
+            $clientId = $ownerToAccountMap[$userId] ?? null;
 
             $rows[] = [
                 'id' => $userId,
-                'email' => $row['email'] ?? 'user-' . $row['id'] . '@imported.local',
+                'email' => $email,
                 'username' => $row['username'] ?? null,
                 'roles' => json_encode($roles),
-                'password' => $hashedPassword,
+                'password' => !empty($row['password']) ? $row['password'] : $hashedPassword,
                 'first_name' => $row['first_name'] ?? 'Imported',
                 'last_name' => $row['last_name'] ?? 'User',
-                'phone_number' => null, // user_entity has no phone field
+                'phone_number' => null,
                 'address' => null,
                 'is_active' => $this->toBool($row['enabled'] ?? 1),
                 'failed_login_attempts' => 0,
@@ -822,10 +749,115 @@ class ImportProductionDataCommand extends Command
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
+            $usedEmails[strtolower($email)] = true;
             $this->importedIds['user'][] = $userId;
+            if ($clientId) {
+                $this->accountUserMap[$clientId] = $userId;
+            }
+            if ($userId >= $nextId) {
+                $nextId = $userId + 1;
+            }
         }
 
-        $this->io->writeln(sprintf('  Found %d users', count($rows)));
+        $this->io->writeln(sprintf('  Imported %d users from user_entity', count($rows)));
+
+        // Step 2: Import production contacts as users (ones that don't already have a user_entity match)
+        $contactSource = $legacy->fetchAllAssociative('SELECT * FROM contact_entity');
+        $contactUsers = 0;
+
+        foreach ($contactSource as $row) {
+            $accountId = isset($row['account_id']) ? (int) $row['account_id'] : null;
+
+            // Only import contacts for imported clients
+            if ($this->storeFilter && $accountId && !in_array($accountId, $this->importedIds['client'] ?? [])) {
+                continue;
+            }
+
+            $email = $row['email'] ?? null;
+
+            // Skip contacts without email (can't create a user without one)
+            if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                continue;
+            }
+
+            // Skip if this email already exists (from user_entity import)
+            if (isset($usedEmails[strtolower($email)])) {
+                // But ensure the existing user gets this client_id if they don't have one
+                foreach ($rows as &$existingRow) {
+                    if (strtolower($existingRow['email']) === strtolower($email) && !$existingRow['client_id'] && $accountId) {
+                        $existingRow['client_id'] = $accountId;
+                        $this->accountUserMap[$accountId] = $existingRow['id'];
+                    }
+                }
+                unset($existingRow);
+                continue;
+            }
+
+            $userId = $nextId++;
+            $clientId = $accountId;
+
+            $rows[] = [
+                'id' => $userId,
+                'email' => $email,
+                'username' => null,
+                'roles' => json_encode(['ROLE_CLIENT', 'ROLE_USER']),
+                'password' => $hashedPassword,
+                'first_name' => $row['first_name'] ?? 'Imported',
+                'last_name' => $row['last_name'] ?? 'Contact',
+                'phone_number' => $row['phone'] ?? null,
+                'address' => null,
+                'is_active' => $this->toBool($row['is_active'] ?? 1),
+                'failed_login_attempts' => 0,
+                'client_id' => $clientId,
+                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
+                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
+            ];
+            $usedEmails[strtolower($email)] = true;
+            $this->importedIds['user'][] = $userId;
+            $contactUsers++;
+
+            // Build account→user map (first user per account wins)
+            if ($clientId && !isset($this->accountUserMap[$clientId])) {
+                $this->accountUserMap[$clientId] = $userId;
+            }
+        }
+
+        $this->io->writeln(sprintf('  Created %d users from contact_entity', $contactUsers));
+
+        // Step 3: Add test admin users for development
+        $testUsers = [
+            ['email' => 'super@starlinger.com', 'username' => 'superadmin', 'roles' => ['ROLE_ADMIN', 'ROLE_USER'], 'first_name' => 'Super', 'last_name' => 'Admin'],
+            ['email' => 'admin@starlinger.com', 'username' => 'admin', 'roles' => ['ROLE_ADMIN', 'ROLE_USER'], 'first_name' => 'Admin', 'last_name' => 'User'],
+            ['email' => 'clientadmin@starlinger.com', 'username' => 'clientadmin', 'roles' => ['ROLE_CLIENT_ADMIN', 'ROLE_USER'], 'first_name' => 'Client', 'last_name' => 'Admin'],
+            ['email' => 'recouser@starlinger.com', 'username' => 'recouser', 'roles' => ['ROLE_CLIENT', 'ROLE_USER'], 'first_name' => 'Reco', 'last_name' => 'User'],
+        ];
+        $testUserCount = 0;
+        foreach ($testUsers as $tu) {
+            if (!isset($usedEmails[strtolower($tu['email'])])) {
+                $rows[] = [
+                    'id' => $nextId,
+                    'email' => $tu['email'],
+                    'username' => $tu['username'],
+                    'roles' => json_encode($tu['roles']),
+                    'password' => $hashedPassword,
+                    'first_name' => $tu['first_name'],
+                    'last_name' => $tu['last_name'],
+                    'phone_number' => null,
+                    'address' => null,
+                    'is_active' => true,
+                    'failed_login_attempts' => 0,
+                    'client_id' => null,
+                    'created_at' => date('Y-m-d H:i:s'),
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ];
+                $usedEmails[strtolower($tu['email'])] = true;
+                $nextId++;
+                $testUserCount++;
+            }
+        }
+        $this->io->writeln(sprintf('  Added %d test admin users', $testUserCount));
+
+        $this->io->writeln(sprintf('  Total users: %d', count($rows)));
         $this->io->writeln(sprintf('  Account-User mappings: %d', count($this->accountUserMap)));
         $this->importBatch($conn, '`user`', $rows);
         $this->resetAutoIncrement($conn, '`user`');
@@ -838,7 +870,7 @@ class ImportProductionDataCommand extends Command
         foreach ($fosRoles as $role) {
             $role = strtoupper(trim($role));
             $recoRoles[] = match (true) {
-                str_contains($role, 'SUPER') => 'ROLE_SUPER_ADMIN',
+                str_contains($role, 'SUPER') => 'ROLE_ADMIN',
                 str_contains($role, 'ADMIN') => 'ROLE_ADMIN',
                 str_contains($role, 'MANAGER') => 'ROLE_CLIENT_ADMIN',
                 default => $role, // Keep as-is (ROLE_USER, etc.)
