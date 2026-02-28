@@ -873,7 +873,7 @@ class ImportProductionDataCommand extends Command
                 str_contains($role, 'SUPER') => 'ROLE_ADMIN',
                 str_contains($role, 'ADMIN') => 'ROLE_ADMIN',
                 str_contains($role, 'MANAGER') => 'ROLE_CLIENT_ADMIN',
-                default => $role, // Keep as-is (ROLE_USER, etc.)
+                default => 'ROLE_CLIENT',
             };
         }
 
