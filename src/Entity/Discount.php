@@ -13,7 +13,10 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use ApiPlatform\Metadata\ApiProperty;
 use App\Repository\DiscountRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Serializer\Annotation\SerializedName;
@@ -100,6 +103,30 @@ class Discount
     #[Gedmo\Timestampable(on: "update")]
     #[Groups(['discount:read'])]
     private ?\DateTimeInterface $updatedAt = null;
+
+    /**
+     * @var Collection<int, AccountGroup>
+     */
+    #[ORM\ManyToMany(targetEntity: AccountGroup::class)]
+    #[ORM\JoinTable(name: 'discount_account_group')]
+    #[Groups(['discount:read', 'discount:write'])]
+    #[ApiProperty(readableLink: false, writableLink: false)]
+    private Collection $accountGroups;
+
+    /**
+     * @var Collection<int, Client>
+     */
+    #[ORM\ManyToMany(targetEntity: Client::class)]
+    #[ORM\JoinTable(name: 'discount_client')]
+    #[Groups(['discount:read', 'discount:write'])]
+    #[ApiProperty(readableLink: false, writableLink: false)]
+    private Collection $clients;
+
+    public function __construct()
+    {
+        $this->accountGroups = new ArrayCollection();
+        $this->clients = new ArrayCollection();
+    }
 
     public function getId(): ?int
     {
@@ -208,6 +235,50 @@ class Discount
     public function setUpdatedAt(\DateTimeInterface $updatedAt): static
     {
         $this->updatedAt = $updatedAt;
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, AccountGroup>
+     */
+    public function getAccountGroups(): Collection
+    {
+        return $this->accountGroups;
+    }
+
+    public function addAccountGroup(AccountGroup $accountGroup): static
+    {
+        if (!$this->accountGroups->contains($accountGroup)) {
+            $this->accountGroups->add($accountGroup);
+        }
+        return $this;
+    }
+
+    public function removeAccountGroup(AccountGroup $accountGroup): static
+    {
+        $this->accountGroups->removeElement($accountGroup);
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Client>
+     */
+    public function getClients(): Collection
+    {
+        return $this->clients;
+    }
+
+    public function addClient(Client $client): static
+    {
+        if (!$this->clients->contains($client)) {
+            $this->clients->add($client);
+        }
+        return $this;
+    }
+
+    public function removeClient(Client $client): static
+    {
+        $this->clients->removeElement($client);
         return $this;
     }
 }

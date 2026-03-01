@@ -14,6 +14,7 @@ use Symfony\Component\Serializer\Annotation\Groups;
     operations: [
         new Get(
             uriTemplate: '/dashboard/performance',
+            normalizationContext: ['groups' => ['dashboard:read']],
             openapi: new Model\Operation(
                 tags: ['Dashboard'],
                 summary: 'Get performance overview metrics',

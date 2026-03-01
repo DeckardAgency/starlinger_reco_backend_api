@@ -161,6 +161,8 @@ class Order
     public const STATUS_IN_PROGRESS = 'in_progress';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_CANCELED = 'canceled';
+    public const STATUS_CONFIRMED = 'confirmed';
+    public const STATUS_DISPATCHED = 'dispatched';
 
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -179,6 +181,14 @@ class Order
     #[ORM\Column(type: "float")]
     #[Groups(['order:read'])]
     private float $totalAmount = 0;
+
+    #[ORM\Column(type: "float", options: ['default' => 0])]
+    #[Groups(['order:read'])]
+    private float $subtotalBeforeDiscount = 0;
+
+    #[ORM\Column(type: "float", options: ['default' => 0])]
+    #[Groups(['order:read'])]
+    private float $totalDiscount = 0;
 
     #[ORM\Column(type: "text", nullable: true)]
     #[Groups(['order:read', 'order:write'])]
@@ -276,6 +286,16 @@ class Order
     #[Groups(['order:read'])]
     private ?User $cancelledBy = null;
 
+    #[ORM\ManyToOne(targetEntity: PaymentType::class)]
+    #[ORM\JoinColumn(nullable: true)]
+    #[Groups(['order:read', 'order:write'])]
+    private ?PaymentType $paymentType = null;
+
+    #[ORM\ManyToOne(targetEntity: DeliveryType::class)]
+    #[ORM\JoinColumn(nullable: true)]
+    #[Groups(['order:read', 'order:write'])]
+    private ?DeliveryType $deliveryType = null;
+
     public function __construct()
     {
         $this->items = new ArrayCollection();
@@ -347,10 +367,18 @@ class Order
     public function calculateTotalAmount(): static
     {
         $total = 0;
+        $subtotalBeforeDiscount = 0;
+
         foreach ($this->items as $item) {
             $total += $item->getSubtotal();
+            $originalPrice = $item->getOriginalUnitPrice() ?? $item->getUnitPrice();
+            $subtotalBeforeDiscount += $originalPrice * $item->getQuantity();
         }
+
         $this->totalAmount = $total;
+        $this->subtotalBeforeDiscount = $subtotalBeforeDiscount;
+        $this->totalDiscount = max(0, $subtotalBeforeDiscount - $total);
+
         return $this;
     }
 
@@ -728,6 +756,50 @@ class Order
             }
         }
         return true;
+    }
+
+    public function getSubtotalBeforeDiscount(): float
+    {
+        return $this->subtotalBeforeDiscount;
+    }
+
+    public function setSubtotalBeforeDiscount(float $subtotalBeforeDiscount): static
+    {
+        $this->subtotalBeforeDiscount = $subtotalBeforeDiscount;
+        return $this;
+    }
+
+    public function getTotalDiscount(): float
+    {
+        return $this->totalDiscount;
+    }
+
+    public function setTotalDiscount(float $totalDiscount): static
+    {
+        $this->totalDiscount = $totalDiscount;
+        return $this;
+    }
+
+    public function getPaymentType(): ?PaymentType
+    {
+        return $this->paymentType;
+    }
+
+    public function setPaymentType(?PaymentType $paymentType): static
+    {
+        $this->paymentType = $paymentType;
+        return $this;
+    }
+
+    public function getDeliveryType(): ?DeliveryType
+    {
+        return $this->deliveryType;
+    }
+
+    public function setDeliveryType(?DeliveryType $deliveryType): static
+    {
+        $this->deliveryType = $deliveryType;
+        return $this;
     }
 
     /**

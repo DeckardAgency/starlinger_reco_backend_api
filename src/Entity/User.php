@@ -38,7 +38,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     normalizationContext: ['groups' => ['user:read']],
     denormalizationContext: ['groups' => ['user:create', 'user:update']],
 )]
-#[ApiFilter(SearchFilter::class, properties: ['email' => 'exact', 'client.code' => 'exact', 'roles' => 'partial'])]
+#[ApiFilter(SearchFilter::class, properties: ['email' => 'exact', 'client.code' => 'exact', 'client.id' => 'exact', 'roles' => 'partial'])]
 #[ApiFilter(OrderFilter::class, properties: ['id', 'email', 'firstName', 'lastName'])]
 #[ApiFilter(NoClientFilter::class)]
 #[ORM\Entity(repositoryClass: UserRepository::class)]

@@ -94,6 +94,14 @@ class OrderItem
     #[Groups(['order_item:read'])]
     private bool $isCustomPrice = false;
 
+    #[ORM\Column(type: "float", nullable: true)]
+    #[Groups(['order_item:read', 'order:read'])]
+    private ?float $originalUnitPrice = null;
+
+    #[ORM\Column(type: "float", options: ['default' => 0])]
+    #[Groups(['order_item:read', 'order:read'])]
+    private float $discountPercent = 0;
+
     #[ORM\Column(length: 20, options: ['default' => 'none'])]
     #[Groups(['order_item:read', 'order:read'])]
     private string $infoStatus = self::INFO_STATUS_NONE;
@@ -215,6 +223,28 @@ class OrderItem
     public function setIsCustomPrice(bool $isCustomPrice): static
     {
         $this->isCustomPrice = $isCustomPrice;
+        return $this;
+    }
+
+    public function getOriginalUnitPrice(): ?float
+    {
+        return $this->originalUnitPrice;
+    }
+
+    public function setOriginalUnitPrice(?float $originalUnitPrice): static
+    {
+        $this->originalUnitPrice = $originalUnitPrice;
+        return $this;
+    }
+
+    public function getDiscountPercent(): float
+    {
+        return $this->discountPercent;
+    }
+
+    public function setDiscountPercent(float $discountPercent): static
+    {
+        $this->discountPercent = $discountPercent;
         return $this;
     }
 

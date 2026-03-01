@@ -23,35 +23,29 @@ class OrderPdfController extends AbstractController
 
     public function __invoke(string $id): Response
     {
-        // Validate ID is numeric
         $orderId = (int) $id;
         if ($orderId <= 0) {
             throw new NotFoundHttpException('Invalid order ID format');
         }
 
-        // Find the order
         $order = $this->orderRepository->find($orderId);
 
         if (!$order) {
             throw new NotFoundHttpException('Order not found');
         }
 
-        // Check if user has access to this order
         $this->denyAccessUnlessGranted('VIEW', $order);
 
-        // Render the PDF template
         $html = $this->twig->render('pdf/order.html.twig', [
             'order' => $order,
             'generatedAt' => new \DateTime(),
         ]);
 
-        // Generate filename
         $filename = sprintf('order_%s_%s.pdf',
             $order->getOrderNumber(),
             date('Y-m-d_His')
         );
 
-        // Return PDF response
         return new PdfResponse(
             $this->knpSnappyPdf->getOutputFromHtml($html, [
                 'encoding' => 'utf-8',

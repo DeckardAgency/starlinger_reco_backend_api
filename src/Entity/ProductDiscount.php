@@ -42,7 +42,8 @@ use Gedmo\Mapping\Annotation as Gedmo;
     denormalizationContext: ['groups' => ['product_discount:write']]
 )]
 #[ApiFilter(SearchFilter::class, properties: [
-    'productId' => 'exact'
+    'productId' => 'exact',
+    'discountId' => 'exact'
 ])]
 #[ORM\Entity(repositoryClass: ProductDiscountRepository::class)]
 #[ORM\Table(name: 'product_discount')]
@@ -57,6 +58,10 @@ class ProductDiscount
     #[ORM\Column(name: 'product_id', type: 'integer', nullable: true)]
     #[Groups(['product_discount:read', 'product_discount:write'])]
     private ?int $productId = null;
+
+    #[ORM\Column(name: 'discount_id', type: 'integer', nullable: true)]
+    #[Groups(['product_discount:read', 'product_discount:write'])]
+    private ?int $discountId = null;
 
     #[ORM\Column(name: 'discount_price_base', type: 'decimal', precision: 12, scale: 4, nullable: true)]
     #[Groups(['product_discount:read', 'product_discount:write'])]
@@ -115,6 +120,17 @@ class ProductDiscount
     public function setProductId(?int $productId): static
     {
         $this->productId = $productId;
+        return $this;
+    }
+
+    public function getDiscountId(): ?int
+    {
+        return $this->discountId;
+    }
+
+    public function setDiscountId(?int $discountId): static
+    {
+        $this->discountId = $discountId;
         return $this;
     }
 

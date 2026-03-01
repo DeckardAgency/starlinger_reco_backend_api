@@ -17,6 +17,8 @@ framework:
                 - more_info
                 - information_provided
                 - in_progress
+                - confirmed
+                - dispatched
                 - completed
                 - canceled
             transitions:
@@ -26,6 +28,9 @@ framework:
                 review:
                     from: submitted
                     to: in_review
+                confirm:
+                    from: submitted
+                    to: confirmed
                 request_more_info:
                     from: [submitted, in_review, information_provided]
                     to: more_info
@@ -35,9 +40,12 @@ framework:
                 start_progress:
                     from: [submitted, in_review, information_provided]
                     to: in_progress
+                dispatch:
+                    from: confirmed
+                    to: dispatched
                 complete:
-                    from: in_progress
+                    from: [in_progress, dispatched]
                     to: completed
                 cancel:
-                    from: [draft, submitted, in_review, more_info, information_provided, in_progress]
+                    from: [draft, submitted, in_review, more_info, information_provided, in_progress, confirmed, dispatched]
                     to: canceled

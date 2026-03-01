@@ -256,9 +256,21 @@ final class OrderPriceProcessor implements ProcessorInterface
                 }
             }
 
-            // Update the item with the correct price
+            // Store the original catalog price for discount tracking
+            $originalPrice = $product->getPrice();
+            $item->setOriginalUnitPrice($originalPrice);
+
+            // Update the item with the correct (possibly discounted) price
             $item->setUnitPrice($price);
             $item->setIsCustomPrice($isCustomPrice);
+
+            // Calculate discount percentage
+            if ($originalPrice > 0 && $price < $originalPrice) {
+                $discountPercent = (($originalPrice - $price) / $originalPrice) * 100;
+                $item->setDiscountPercent(round($discountPercent, 2));
+            } else {
+                $item->setDiscountPercent(0);
+            }
 
             // Recalculate subtotal
             $item->setQuantity($item->getQuantity()); // This triggers subtotal recalculation
@@ -356,9 +368,31 @@ final class OrderPriceProcessor implements ProcessorInterface
         $transitionMap = [
             Order::STATUS_DRAFT => [
                 Order::STATUS_SUBMITTED => 'submit',
+                Order::STATUS_CANCELED => 'cancel',
             ],
             Order::STATUS_SUBMITTED => [
+                Order::STATUS_IN_REVIEW => 'review',
                 Order::STATUS_CONFIRMED => 'confirm',
+                Order::STATUS_MORE_INFO => 'request_more_info',
+                Order::STATUS_IN_PROGRESS => 'start_progress',
+                Order::STATUS_CANCELED => 'cancel',
+            ],
+            Order::STATUS_IN_REVIEW => [
+                Order::STATUS_MORE_INFO => 'request_more_info',
+                Order::STATUS_IN_PROGRESS => 'start_progress',
+                Order::STATUS_CANCELED => 'cancel',
+            ],
+            Order::STATUS_MORE_INFO => [
+                Order::STATUS_INFORMATION_PROVIDED => 'provide_information',
+                Order::STATUS_CANCELED => 'cancel',
+            ],
+            Order::STATUS_INFORMATION_PROVIDED => [
+                Order::STATUS_MORE_INFO => 'request_more_info',
+                Order::STATUS_IN_PROGRESS => 'start_progress',
+                Order::STATUS_CANCELED => 'cancel',
+            ],
+            Order::STATUS_IN_PROGRESS => [
+                Order::STATUS_COMPLETED => 'complete',
                 Order::STATUS_CANCELED => 'cancel',
             ],
             Order::STATUS_CONFIRMED => [
@@ -367,6 +401,7 @@ final class OrderPriceProcessor implements ProcessorInterface
             ],
             Order::STATUS_DISPATCHED => [
                 Order::STATUS_COMPLETED => 'complete',
+                Order::STATUS_CANCELED => 'cancel',
             ],
         ];
 

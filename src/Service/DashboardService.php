@@ -191,6 +191,9 @@ class DashboardService
         $results = $conn->executeQuery($sql, ['draftStatus' => Order::STATUS_DRAFT])->fetchAllAssociative();
 
         $statusLabels = [
+            'pending' => 'Pending',
+            'processing' => 'Processing',
+            'dispatched' => 'Dispatched',
             Order::STATUS_SUBMITTED => 'Submitted',
             Order::STATUS_IN_REVIEW => 'In Review',
             Order::STATUS_MORE_INFO => 'More Info Needed',
