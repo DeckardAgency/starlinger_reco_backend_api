@@ -2,10 +2,10 @@
 
 namespace App\Controller;
 
-use App\Entity\Order;
+use App\Entity\User;
 use App\Service\DashboardService;
-use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
@@ -14,19 +14,17 @@ use Symfony\Component\Routing\Annotation\Route;
 class DashboardController extends AbstractController
 {
     public function __construct(
-        private EntityManagerInterface $entityManager,
-        private DashboardService $dashboardService
+        private DashboardService $dashboardService,
+        private Security $security
     ) {}
 
     #[Route('/dashboard/performance-overview', name: 'api_dashboard_performance_overview', methods: ['GET'])]
     public function performanceOverview(Request $request): JsonResponse
     {
-        // Get date range from query parameters
         $startDate = $request->query->get('startDate');
         $endDate = $request->query->get('endDate');
 
         if (!$startDate || !$endDate) {
-            // Default to current year if no dates provided
             $startDate = new \DateTime('first day of January this year');
             $endDate = new \DateTime('last day of December this year');
         } else {
@@ -34,141 +32,33 @@ class DashboardController extends AbstractController
             $endDate = new \DateTime($endDate);
         }
 
-        // Get previous period for comparison
-        $interval = $startDate->diff($endDate);
-        $previousStartDate = clone $startDate;
-        $previousEndDate = clone $endDate;
-        $previousStartDate->sub($interval);
-        $previousEndDate->sub($interval);
-
-        // Get current period data
-        $currentData = $this->getPerformanceData($startDate, $endDate);
-
-        // Get previous period data for comparison
-        $previousData = $this->getPerformanceData($previousStartDate, $previousEndDate);
-
-        // Calculate percentage changes
-        $response = [
-            'period' => [
-                'start' => $startDate->format('Y-m-d'),
-                'end' => $endDate->format('Y-m-d')
-            ],
-            'shopOrders' => [
-                'value' => $currentData['shopOrders'],
-                'percentageChange' => $this->calculatePercentageChange(
-                    $previousData['shopOrders'],
-                    $currentData['shopOrders']
-                )
-            ],
-            'activeCarts' => [
-                'value' => $currentData['activeCarts'],
-                'percentageChange' => $this->calculatePercentageChange(
-                    $previousData['activeCarts'],
-                    $currentData['activeCarts']
-                )
-            ],
-            'completedCarts' => [
-                'value' => $currentData['completedCarts'],
-                'percentageChange' => $this->calculatePercentageChange(
-                    $previousData['completedCarts'],
-                    $currentData['completedCarts']
-                )
-            ],
-            'totalShopRevenue' => [
-                'value' => $currentData['totalShopRevenue'],
-                'formatted' => number_format($currentData['totalShopRevenue'], 2, ',', '.') . ' €',
-                'percentageChange' => $this->calculatePercentageChange(
-                    $previousData['totalShopRevenue'],
-                    $currentData['totalShopRevenue']
-                )
-            ],
-            'cancelledOrdersRevenue' => [
-                'value' => $currentData['cancelledOrdersRevenue'],
-                'formatted' => number_format($currentData['cancelledOrdersRevenue'], 2, ',', '.') . ' €',
-                'percentageChange' => $this->calculatePercentageChange(
-                    $previousData['cancelledOrdersRevenue'],
-                    $currentData['cancelledOrdersRevenue']
-                )
-            ]
-        ];
+        $clientId = $this->getClientIdForCurrentUser();
+        $response = $this->dashboardService->getPerformanceOverview($startDate, $endDate, $clientId);
 
         return $this->json($response);
-    }
-
-    private function getPerformanceData(\DateTime $startDate, \DateTime $endDate): array
-    {
-        $conn = $this->entityManager->getConnection();
-
-        // Use native SQL for better performance with a single query
-        $sql = '
-            SELECT
-                -- Shop orders (non-draft, non-cancelled)
-                (SELECT COUNT(*)
-                 FROM `order`
-                 WHERE created_at >= :startDate
-                 AND created_at <= :endDate
-                 AND status NOT IN (:draftStatus, :cancelledStatus)) as shop_orders,
-
-                -- Active carts (draft orders)
-                (SELECT COUNT(*)
-                 FROM `order`
-                 WHERE created_at >= :startDate
-                 AND created_at <= :endDate
-                 AND status = :draftStatus) as active_carts,
-
-                -- Completed carts
-                (SELECT COUNT(*)
-                 FROM `order`
-                 WHERE created_at >= :startDate
-                 AND created_at <= :endDate
-                 AND status = :completedStatus) as completed_carts,
-
-                -- Total shop revenue
-                (SELECT COALESCE(SUM(total_amount), 0)
-                 FROM `order`
-                 WHERE created_at >= :startDate
-                 AND created_at <= :endDate
-                 AND status NOT IN (:draftStatus, :cancelledStatus)) as total_shop_revenue,
-
-                -- Cancelled orders revenue
-                (SELECT COALESCE(SUM(total_amount), 0)
-                 FROM `order`
-                 WHERE created_at >= :startDate
-                 AND created_at <= :endDate
-                 AND status = :cancelledStatus) as cancelled_orders_revenue
-        ';
-
-        $stmt = $conn->prepare($sql);
-        $result = $stmt->executeQuery([
-            'startDate' => $startDate->format('Y-m-d H:i:s'),
-            'endDate' => $endDate->format('Y-m-d H:i:s'),
-            'draftStatus' => Order::STATUS_DRAFT,
-            'cancelledStatus' => Order::STATUS_CANCELED,
-            'completedStatus' => Order::STATUS_COMPLETED
-        ])->fetchAssociative();
-
-        return [
-            'shopOrders' => (int) $result['shop_orders'],
-            'activeCarts' => (int) $result['active_carts'],
-            'completedCarts' => (int) $result['completed_carts'],
-            'totalShopRevenue' => (float) $result['total_shop_revenue'],
-            'cancelledOrdersRevenue' => (float) $result['cancelled_orders_revenue']
-        ];
-    }
-
-    private function calculatePercentageChange(float $oldValue, float $newValue): float
-    {
-        if ($oldValue == 0) {
-            return $newValue > 0 ? 100.0 : 0.0;
-        }
-
-        return round((($newValue - $oldValue) / $oldValue) * 100, 2);
     }
 
     #[Route('/v1/dashboard/order-status-distribution', name: 'api_dashboard_order_status_distribution', methods: ['GET'])]
     public function orderStatusDistribution(): JsonResponse
     {
-        $data = $this->dashboardService->getOrderStatusDistribution();
+        $clientId = $this->getClientIdForCurrentUser();
+        $data = $this->dashboardService->getOrderStatusDistribution($clientId);
         return $this->json($data);
+    }
+
+    private function getClientIdForCurrentUser(): ?int
+    {
+        $user = $this->security->getUser();
+
+        if (!$user instanceof User) {
+            return null;
+        }
+
+        // Admins see all data
+        if (in_array('ROLE_ADMIN', $user->getRoles(), true)) {
+            return null;
+        }
+
+        return $user->getClient()?->getId();
     }
 }

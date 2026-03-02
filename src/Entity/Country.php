@@ -61,18 +61,18 @@ class Country
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column(type: 'integer')]
-    #[Groups(['country:read', 'delivery_price:read', 'client:read'])]
+    #[Groups(['country:read', 'delivery_price:read', 'client:read', 'address:read'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank]
-    #[Groups(['country:read', 'country:write', 'delivery_price:read', 'client:read'])]
+    #[Groups(['country:read', 'country:write', 'delivery_price:read', 'client:read', 'address:read'])]
     private ?string $name = null;
 
     #[ORM\Column(length: 2, unique: true)]
     #[Assert\NotBlank]
     #[Assert\Length(exactly: 2)]
-    #[Groups(['country:read', 'country:write', 'delivery_price:read', 'client:read'])]
+    #[Groups(['country:read', 'country:write', 'delivery_price:read', 'client:read', 'address:read'])]
     private ?string $code = null;
 
     #[ORM\Column(length: 3, nullable: true)]
@@ -85,7 +85,7 @@ class Country
     private bool $europeanUnion = false;
 
     #[ORM\Column(type: 'decimal', precision: 5, scale: 2, nullable: true)]
-    #[Groups(['country:read', 'country:write'])]
+    #[Groups(['country:read', 'country:write', 'address:read'])]
     private ?string $defaultTaxPercent = null;
 
     #[ORM\Column(type: 'integer', nullable: true)]

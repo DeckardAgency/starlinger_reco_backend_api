@@ -117,8 +117,8 @@ final class OrderPriceProcessor implements ProcessorInterface
             $oldStatus = $originalOrder['status'] ?? null;
             $newStatus = $data->getStatus();
 
-            // Validate and set fields for dispatched status
-            if ($newStatus === Order::STATUS_DISPATCHED && $oldStatus !== Order::STATUS_DISPATCHED) {
+            // Validate and set fields for shipped status
+            if ($newStatus === Order::STATUS_SHIPPED && $oldStatus !== Order::STATUS_SHIPPED) {
                 $this->validateAndSetDispatchedFields($data, $authenticatedUser);
             }
 
@@ -272,8 +272,27 @@ final class OrderPriceProcessor implements ProcessorInterface
                 $item->setDiscountPercent(0);
             }
 
-            // Recalculate subtotal
+            // Recalculate subtotal (without tax yet - tax applied below)
             $item->setQuantity($item->getQuantity()); // This triggers subtotal recalculation
+        }
+
+        // Determine tax rate from shipping address country
+        $taxPercent = 0;
+        if ($client) {
+            foreach ($client->getAddresses() as $address) {
+                if ($address->getIsDelivery() && $address->getIsActive() && $address->getCountry()) {
+                    $countryTaxPercent = $address->getCountry()->getDefaultTaxPercent();
+                    if ($countryTaxPercent !== null) {
+                        $taxPercent = (float) $countryTaxPercent;
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Apply tax rate to all items
+        foreach ($order->getItems() as $item) {
+            $item->setTaxPercent($taxPercent);
         }
     }
 
@@ -325,27 +344,14 @@ final class OrderPriceProcessor implements ProcessorInterface
                     'final_status' => $order->getStatus()
                 ]);
             } else {
-                // Set status back to new status before throwing exception
+                // No direct workflow transition — admin can set any valid status directly
                 $order->setStatus($newStatus);
 
-                // Get available transitions for better error message
-                $availableTransitions = array_map(
-                    fn($t) => $t->getName(),
-                    $this->orderStateMachine->getEnabledTransitions($order)
-                );
-
-                throw new TransitionException(
-                    $order,
-                    $transition ?? 'unknown',
-                    $this->orderStateMachine,
-                    sprintf(
-                        'Invalid status transition from "%s" to "%s" for order %s. Available transitions: %s',
-                        $oldStatus,
-                        $newStatus,
-                        $order->getOrderNumber(),
-                        implode(', ', $availableTransitions) ?: 'none'
-                    )
-                );
+                $this->logger->info('Status set directly by admin (no workflow transition)', [
+                    'order_id' => $order->getId(),
+                    'old_status' => $oldStatus,
+                    'new_status' => $newStatus
+                ]);
             }
         } catch (TransitionException $e) {
             $this->logger->error('Workflow transition failed', [
@@ -367,41 +373,33 @@ final class OrderPriceProcessor implements ProcessorInterface
         // Map status changes to workflow transitions
         $transitionMap = [
             Order::STATUS_DRAFT => [
-                Order::STATUS_SUBMITTED => 'submit',
+                Order::STATUS_NEW => 'submit',
                 Order::STATUS_CANCELED => 'cancel',
             ],
-            Order::STATUS_SUBMITTED => [
-                Order::STATUS_IN_REVIEW => 'review',
-                Order::STATUS_CONFIRMED => 'confirm',
-                Order::STATUS_MORE_INFO => 'request_more_info',
-                Order::STATUS_IN_PROGRESS => 'start_progress',
+            Order::STATUS_NEW => [
+                Order::STATUS_IN_PROCESS => 'start_processing',
+                Order::STATUS_WAITING_FOR_PAYMENT => 'await_payment',
                 Order::STATUS_CANCELED => 'cancel',
             ],
-            Order::STATUS_IN_REVIEW => [
-                Order::STATUS_MORE_INFO => 'request_more_info',
-                Order::STATUS_IN_PROGRESS => 'start_progress',
+            Order::STATUS_IN_PROCESS => [
+                Order::STATUS_WAITING_FOR_PAYMENT => 'await_payment',
+                Order::STATUS_READY_FOR_SHIPMENT => 'ready_to_ship',
                 Order::STATUS_CANCELED => 'cancel',
             ],
-            Order::STATUS_MORE_INFO => [
-                Order::STATUS_INFORMATION_PROVIDED => 'provide_information',
+            Order::STATUS_WAITING_FOR_PAYMENT => [
+                Order::STATUS_IN_PROCESS => 'payment_received',
                 Order::STATUS_CANCELED => 'cancel',
             ],
-            Order::STATUS_INFORMATION_PROVIDED => [
-                Order::STATUS_MORE_INFO => 'request_more_info',
-                Order::STATUS_IN_PROGRESS => 'start_progress',
+            Order::STATUS_READY_FOR_SHIPMENT => [
+                Order::STATUS_SHIPPED => 'ship',
                 Order::STATUS_CANCELED => 'cancel',
             ],
-            Order::STATUS_IN_PROGRESS => [
-                Order::STATUS_COMPLETED => 'complete',
-                Order::STATUS_CANCELED => 'cancel',
+            Order::STATUS_SHIPPED => [
+                Order::STATUS_DELIVERED => 'deliver',
+                Order::STATUS_REVERSAL => 'reverse',
             ],
-            Order::STATUS_CONFIRMED => [
-                Order::STATUS_DISPATCHED => 'dispatch',
-                Order::STATUS_CANCELED => 'cancel',
-            ],
-            Order::STATUS_DISPATCHED => [
-                Order::STATUS_COMPLETED => 'complete',
-                Order::STATUS_CANCELED => 'cancel',
+            Order::STATUS_DELIVERED => [
+                Order::STATUS_REVERSAL => 'reverse',
             ],
         ];
 

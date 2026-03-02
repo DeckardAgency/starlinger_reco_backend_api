@@ -11,7 +11,7 @@ class DashboardService
         private EntityManagerInterface $entityManager
     ) {}
 
-    public function getPerformanceOverview(\DateTime $startDate, \DateTime $endDate): array
+    public function getPerformanceOverview(\DateTime $startDate, \DateTime $endDate, ?int $clientId = null): array
     {
         // Normalize dates: start at beginning of day, end at end of day
         $normalizedStartDate = clone $startDate;
@@ -21,7 +21,7 @@ class DashboardService
         $normalizedEndDate->setTime(23, 59, 59);
 
         // Get current period data
-        $currentData = $this->getPerformanceData($normalizedStartDate, $normalizedEndDate);
+        $currentData = $this->getPerformanceData($normalizedStartDate, $normalizedEndDate, $clientId);
 
         // Calculate the number of days in the current period
         $daysDiff = (int) $normalizedStartDate->diff($normalizedEndDate)->days;
@@ -37,7 +37,7 @@ class DashboardService
         $previousStartDate->modify("-{$daysDiff} days");
         $previousStartDate->setTime(0, 0, 0);
 
-        $previousData = $this->getPerformanceData($previousStartDate, $previousEndDate);
+        $previousData = $this->getPerformanceData($previousStartDate, $previousEndDate, $clientId);
 
         // Build response with percentage changes
         return [
@@ -90,57 +90,70 @@ class DashboardService
         ];
     }
 
-    private function getPerformanceData(\DateTime $startDate, \DateTime $endDate): array
+    private function getPerformanceData(\DateTime $startDate, \DateTime $endDate, ?int $clientId = null): array
     {
         $conn = $this->entityManager->getConnection();
 
-        // Use native SQL for better performance with a single query
-        $sql = '
-            SELECT 
+        $joinClause = $clientId !== null ? 'JOIN `user` u ON o.user_id = u.id' : '';
+        $clientWhere = $clientId !== null ? 'AND u.client_id = :clientId' : '';
+
+        $sql = "
+            SELECT
                 -- Shop orders (non-draft, non-cancelled)
-                (SELECT COUNT(*) 
-                 FROM `order` 
-                 WHERE created_at >= :startDate 
-                 AND created_at <= :endDate
-                 AND status NOT IN (:draftStatus, :cancelledStatus)) as shop_orders,
+                (SELECT COUNT(*)
+                 FROM `order` o {$joinClause}
+                 WHERE o.created_at >= :startDate
+                 AND o.created_at <= :endDate
+                 AND o.status NOT IN (:draftStatus, :cancelledStatus)
+                 {$clientWhere}) as shop_orders,
 
                 -- Active carts (draft orders)
-                (SELECT COUNT(*) 
-                 FROM `order` 
-                 WHERE created_at >= :startDate 
-                 AND created_at <= :endDate
-                 AND status = :draftStatus) as active_carts,
-                
-                -- Completed carts
-                (SELECT COUNT(*) 
-                 FROM `order` 
-                 WHERE created_at >= :startDate 
-                 AND created_at <= :endDate
-                 AND status = :completedStatus) as completed_carts,
-                
-                -- Total shop revenue
-                (SELECT COALESCE(SUM(total_amount), 0) 
-                 FROM `order` 
-                 WHERE created_at >= :startDate 
-                 AND created_at <= :endDate
-                 AND status NOT IN (:draftStatus, :cancelledStatus)) as total_shop_revenue,
-                
-                -- Cancelled orders revenue
-                (SELECT COALESCE(SUM(total_amount), 0) 
-                 FROM `order` 
-                 WHERE created_at >= :startDate 
-                 AND created_at <= :endDate
-                 AND status = :cancelledStatus) as cancelled_orders_revenue
-        ';
+                (SELECT COUNT(*)
+                 FROM `order` o {$joinClause}
+                 WHERE o.created_at >= :startDate
+                 AND o.created_at <= :endDate
+                 AND o.status = :draftStatus
+                 {$clientWhere}) as active_carts,
 
-        $stmt = $conn->prepare($sql);
-        $result = $stmt->executeQuery([
+                -- Completed carts (delivered orders)
+                (SELECT COUNT(*)
+                 FROM `order` o {$joinClause}
+                 WHERE o.created_at >= :startDate
+                 AND o.created_at <= :endDate
+                 AND o.status = :deliveredStatus
+                 {$clientWhere}) as completed_carts,
+
+                -- Total shop revenue
+                (SELECT COALESCE(SUM(o.total_amount), 0)
+                 FROM `order` o {$joinClause}
+                 WHERE o.created_at >= :startDate
+                 AND o.created_at <= :endDate
+                 AND o.status NOT IN (:draftStatus, :cancelledStatus)
+                 {$clientWhere}) as total_shop_revenue,
+
+                -- Cancelled orders revenue
+                (SELECT COALESCE(SUM(o.total_amount), 0)
+                 FROM `order` o {$joinClause}
+                 WHERE o.created_at >= :startDate
+                 AND o.created_at <= :endDate
+                 AND o.status = :cancelledStatus
+                 {$clientWhere}) as cancelled_orders_revenue
+        ";
+
+        $params = [
             'startDate' => $startDate->format('Y-m-d H:i:s'),
             'endDate' => $endDate->format('Y-m-d H:i:s'),
             'draftStatus' => Order::STATUS_DRAFT,
             'cancelledStatus' => Order::STATUS_CANCELED,
-            'completedStatus' => Order::STATUS_COMPLETED
-        ])->fetchAssociative();
+            'deliveredStatus' => Order::STATUS_DELIVERED
+        ];
+
+        if ($clientId !== null) {
+            $params['clientId'] = $clientId;
+        }
+
+        $stmt = $conn->prepare($sql);
+        $result = $stmt->executeQuery($params)->fetchAssociative();
 
         return [
             'shopOrders' => (int) $result['shop_orders'],
@@ -174,33 +187,41 @@ class DashboardService
     /**
      * Get order status distribution for dashboard chart
      */
-    public function getOrderStatusDistribution(): array
+    public function getOrderStatusDistribution(?int $clientId = null): array
     {
         $conn = $this->entityManager->getConnection();
 
-        $sql = '
-            SELECT
-                status,
-                COUNT(*) as count
-            FROM `order`
-            WHERE status != :draftStatus
-            GROUP BY status
-            ORDER BY count DESC
-        ';
+        $joinClause = $clientId !== null ? 'JOIN `user` u ON o.user_id = u.id' : '';
+        $clientWhere = $clientId !== null ? 'AND u.client_id = :clientId' : '';
 
-        $results = $conn->executeQuery($sql, ['draftStatus' => Order::STATUS_DRAFT])->fetchAllAssociative();
+        $sql = "
+            SELECT
+                o.status,
+                COUNT(*) as count
+            FROM `order` o
+            {$joinClause}
+            WHERE o.status != :draftStatus
+            {$clientWhere}
+            GROUP BY o.status
+            ORDER BY count DESC
+        ";
+
+        $params = ['draftStatus' => Order::STATUS_DRAFT];
+        if ($clientId !== null) {
+            $params['clientId'] = $clientId;
+        }
+
+        $results = $conn->executeQuery($sql, $params)->fetchAllAssociative();
 
         $statusLabels = [
-            'pending' => 'Pending',
-            'processing' => 'Processing',
-            'dispatched' => 'Dispatched',
-            Order::STATUS_SUBMITTED => 'Submitted',
-            Order::STATUS_IN_REVIEW => 'In Review',
-            Order::STATUS_MORE_INFO => 'More Info Needed',
-            Order::STATUS_INFORMATION_PROVIDED => 'Info Provided',
-            Order::STATUS_IN_PROGRESS => 'In Progress',
-            Order::STATUS_COMPLETED => 'Completed',
-            Order::STATUS_CANCELED => 'Canceled'
+            Order::STATUS_NEW => 'New',
+            Order::STATUS_IN_PROCESS => 'In process',
+            Order::STATUS_WAITING_FOR_PAYMENT => 'Waiting for payment',
+            Order::STATUS_READY_FOR_SHIPMENT => 'Ready for shipment',
+            Order::STATUS_SHIPPED => 'Shipped',
+            Order::STATUS_DELIVERED => 'Delivered',
+            Order::STATUS_CANCELED => 'Canceled',
+            Order::STATUS_REVERSAL => 'Reversal'
         ];
 
         $distribution = [];

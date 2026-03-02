@@ -92,7 +92,7 @@ class Address
     #[Groups(['address:read', 'address:write', 'client:read', 'client:read:details'])]
     private ?string $city = null;
 
-    #[ORM\Column(length: 20, nullable: true)]
+    #[ORM\Column(length: 255, nullable: true)]
     #[Groups(['address:read', 'address:write', 'client:read', 'client:read:details'])]
     private ?string $postalCode = null;
 

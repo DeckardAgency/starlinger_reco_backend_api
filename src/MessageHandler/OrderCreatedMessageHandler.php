@@ -76,7 +76,7 @@ class OrderCreatedMessageHandler
             );
 
             // Log order creation if it's not a draft
-            if ($order->getStatus() === Order::STATUS_SUBMITTED) {
+            if ($order->getStatus() === Order::STATUS_NEW) {
                 $log = $this->orderLogService->logOrderSubmission(
                     $order,
                     $description,
@@ -268,9 +268,9 @@ class OrderCreatedMessageHandler
         $orderCount = $this->orderRepository->count([
             'user' => $user,
             'status' => [
-                Order::STATUS_COMPLETED,
-                Order::STATUS_DISPATCHED,
-                Order::STATUS_CONFIRMED
+                Order::STATUS_DELIVERED,
+                Order::STATUS_SHIPPED,
+                Order::STATUS_IN_PROCESS
             ]
         ]);
 

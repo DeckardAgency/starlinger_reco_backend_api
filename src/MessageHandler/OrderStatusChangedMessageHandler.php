@@ -118,20 +118,18 @@ class OrderStatusChangedMessageHandler
         try {
             // Determine which template to use based on the new status
             $templateName = match ($newStatus) {
-                Order::STATUS_SUBMITTED => 'emails/admin/order_submitted.html.twig',
-                Order::STATUS_CONFIRMED => 'emails/admin/order_confirmed.html.twig',
-                Order::STATUS_DISPATCHED => 'emails/admin/order_dispatched.html.twig',
-                Order::STATUS_COMPLETED => 'emails/admin/order_completed.html.twig',
+                Order::STATUS_NEW => 'emails/admin/order_submitted.html.twig',
+                Order::STATUS_SHIPPED => 'emails/admin/order_dispatched.html.twig',
+                Order::STATUS_DELIVERED => 'emails/admin/order_completed.html.twig',
                 Order::STATUS_CANCELED => 'emails/admin/order_canceled.html.twig',
                 default => 'emails/admin/order_status_changed.html.twig',
             };
 
             // Get the appropriate subject based on status
             $subject = match ($newStatus) {
-                Order::STATUS_SUBMITTED => 'New Order Submitted: #' . $order->getOrderNumber(),
-                Order::STATUS_CONFIRMED => 'Order #' . $order->getOrderNumber() . ' has been confirmed',
-                Order::STATUS_DISPATCHED => 'Order #' . $order->getOrderNumber() . ' has been dispatched',
-                Order::STATUS_COMPLETED => 'Order #' . $order->getOrderNumber() . ' has been completed',
+                Order::STATUS_NEW => 'New Order Submitted: #' . $order->getOrderNumber(),
+                Order::STATUS_SHIPPED => 'Order #' . $order->getOrderNumber() . ' has been shipped',
+                Order::STATUS_DELIVERED => 'Order #' . $order->getOrderNumber() . ' has been delivered',
                 Order::STATUS_CANCELED => 'Order #' . $order->getOrderNumber() . ' has been canceled',
                 default => 'Order #' . $order->getOrderNumber() . ' status changed to ' . $newStatus,
             };
@@ -225,20 +223,18 @@ class OrderStatusChangedMessageHandler
 
             // Get the appropriate subject based on status
             $subject = match ($newStatus) {
-                Order::STATUS_SUBMITTED => 'Order Received: #' . $order->getOrderNumber(),
-                Order::STATUS_CONFIRMED => 'Your Starlinger Order #' . $order->getOrderNumber() . ' Confirmed',
-                Order::STATUS_DISPATCHED => 'Your Starlinger Order #' . $order->getOrderNumber() . ' has Been Dispatched',
-                Order::STATUS_COMPLETED => 'Your Starlinger Order #' . $order->getOrderNumber() . ' is Now Complete',
+                Order::STATUS_NEW => 'Order Received: #' . $order->getOrderNumber(),
+                Order::STATUS_SHIPPED => 'Your Starlinger Order #' . $order->getOrderNumber() . ' has Been Shipped',
+                Order::STATUS_DELIVERED => 'Your Starlinger Order #' . $order->getOrderNumber() . ' has Been Delivered',
                 Order::STATUS_CANCELED => 'Cancellation Confirmation for Starlinger Order #' . $order->getOrderNumber(),
                 default => 'Update on Your Order #' . $order->getOrderNumber(),
             };
 
             // Determine which template to use based on the new status
             $templateName = match ($newStatus) {
-                Order::STATUS_SUBMITTED => 'emails/customer/order_confirmation.html.twig',
-                Order::STATUS_CONFIRMED => 'emails/customer/order_confirmed.html.twig',
-                Order::STATUS_DISPATCHED => 'emails/customer/order_dispatched.html.twig',
-                Order::STATUS_COMPLETED => 'emails/customer/order_completed.html.twig',
+                Order::STATUS_NEW => 'emails/customer/order_confirmation.html.twig',
+                Order::STATUS_SHIPPED => 'emails/customer/order_dispatched.html.twig',
+                Order::STATUS_DELIVERED => 'emails/customer/order_completed.html.twig',
                 Order::STATUS_CANCELED => 'emails/customer/order_canceled.html.twig',
                 default => 'emails/customer/order_status_changed.html.twig',
             };
@@ -337,9 +333,9 @@ class OrderStatusChangedMessageHandler
         $orderCount = $this->orderRepository->count([
             'user' => $user,
             'status' => [
-                Order::STATUS_COMPLETED,
-                Order::STATUS_DISPATCHED,
-                Order::STATUS_CONFIRMED
+                Order::STATUS_DELIVERED,
+                Order::STATUS_SHIPPED,
+                Order::STATUS_IN_PROCESS
             ]
         ]);
 

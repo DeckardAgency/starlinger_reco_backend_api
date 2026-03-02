@@ -102,6 +102,14 @@ class OrderItem
     #[Groups(['order_item:read', 'order:read'])]
     private float $discountPercent = 0;
 
+    #[ORM\Column(type: "float", options: ['default' => 0])]
+    #[Groups(['order_item:read', 'order:read'])]
+    private float $taxPercent = 0;
+
+    #[ORM\Column(type: "float", options: ['default' => 0])]
+    #[Groups(['order_item:read', 'order:read'])]
+    private float $taxAmount = 0;
+
     #[ORM\Column(length: 20, options: ['default' => 'none'])]
     #[Groups(['order_item:read', 'order:read'])]
     private string $infoStatus = self::INFO_STATUS_NONE;
@@ -191,6 +199,7 @@ class OrderItem
     private function calculateSubtotal(): void
     {
         $this->subtotal = $this->unitPrice * $this->quantity;
+        $this->taxAmount = round($this->subtotal * ($this->taxPercent / 100), 2);
     }
 
     public function getCreatedAt(): ?DateTimeInterface
@@ -245,6 +254,29 @@ class OrderItem
     public function setDiscountPercent(float $discountPercent): static
     {
         $this->discountPercent = $discountPercent;
+        return $this;
+    }
+
+    public function getTaxPercent(): float
+    {
+        return $this->taxPercent;
+    }
+
+    public function setTaxPercent(float $taxPercent): static
+    {
+        $this->taxPercent = $taxPercent;
+        $this->calculateSubtotal();
+        return $this;
+    }
+
+    public function getTaxAmount(): float
+    {
+        return $this->taxAmount;
+    }
+
+    public function setTaxAmount(float $taxAmount): static
+    {
+        $this->taxAmount = $taxAmount;
         return $this;
     }
 

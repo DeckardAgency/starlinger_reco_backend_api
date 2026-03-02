@@ -70,11 +70,11 @@ class OrderLogService
     public function logOrderSubmission(Order $order, ?string $comment = null): ?OrderLog
     {
         // Special case: log when transitioning FROM draft to submitted
-        if ($order->getStatus() === Order::STATUS_SUBMITTED) {
+        if ($order->getStatus() === Order::STATUS_NEW) {
             $log = new OrderLog();
             $log->setOrder($order);
             $log->setPreviousStatus(Order::STATUS_DRAFT);
-            $log->setNewStatus(Order::STATUS_SUBMITTED);
+            $log->setNewStatus(Order::STATUS_NEW);
             $log->setComment($comment ?? 'Order submitted from draft');
 
             $currentUser = $this->security->getUser();

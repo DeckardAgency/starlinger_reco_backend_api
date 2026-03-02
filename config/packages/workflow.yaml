@@ -12,40 +12,39 @@ framework:
             initial_marking: draft
             places:
                 - draft
-                - submitted
-                - in_review
-                - more_info
-                - information_provided
-                - in_progress
-                - confirmed
-                - dispatched
-                - completed
+                - new
+                - in_process
+                - waiting_for_payment
+                - ready_for_shipment
+                - shipped
+                - delivered
                 - canceled
+                - reversal
             transitions:
                 submit:
                     from: draft
-                    to: submitted
-                review:
-                    from: submitted
-                    to: in_review
-                confirm:
-                    from: submitted
-                    to: confirmed
-                request_more_info:
-                    from: [submitted, in_review, information_provided]
-                    to: more_info
-                provide_information:
-                    from: more_info
-                    to: information_provided
-                start_progress:
-                    from: [submitted, in_review, information_provided]
-                    to: in_progress
-                dispatch:
-                    from: confirmed
-                    to: dispatched
-                complete:
-                    from: [in_progress, dispatched]
-                    to: completed
+                    to: new
+                start_processing:
+                    from: new
+                    to: in_process
+                await_payment:
+                    from: [new, in_process]
+                    to: waiting_for_payment
+                payment_received:
+                    from: waiting_for_payment
+                    to: in_process
+                ready_to_ship:
+                    from: in_process
+                    to: ready_for_shipment
+                ship:
+                    from: ready_for_shipment
+                    to: shipped
+                deliver:
+                    from: shipped
+                    to: delivered
                 cancel:
-                    from: [draft, submitted, in_review, more_info, information_provided, in_progress, confirmed, dispatched]
+                    from: [draft, new, in_process, waiting_for_payment, ready_for_shipment]
                     to: canceled
+                reverse:
+                    from: [delivered, shipped]
+                    to: reversal

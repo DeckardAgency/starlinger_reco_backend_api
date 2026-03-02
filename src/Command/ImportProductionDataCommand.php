@@ -212,16 +212,15 @@ class ImportProductionDataCommand extends Command
         $name = strtolower(trim($name));
         return match (true) {
             str_contains($name, 'draft') => 'draft',
-            str_contains($name, 'pending') => 'pending',
-            str_contains($name, 'confirm') => 'confirmed',
-            str_contains($name, 'process') => 'processing',
-            str_contains($name, 'dispatch'), str_contains($name, 'ship'), str_contains($name, 'sent') => 'dispatched',
+            str_contains($name, 'new') => 'new',
+            str_contains($name, 'process') => 'in_process',
             str_contains($name, 'deliver') => 'delivered',
-            str_contains($name, 'cancel') => 'cancelled',
-            str_contains($name, 'complet'), str_contains($name, 'done') => 'completed',
-            str_contains($name, 'offer') => 'offer',
-            str_contains($name, 'new') => 'pending',
-            default => 'pending',
+            str_contains($name, 'cancel') => 'canceled',
+            str_contains($name, 'reversal') => 'reversal',
+            str_contains($name, 'waiting'), str_contains($name, 'payment') => 'waiting_for_payment',
+            str_contains($name, 'ready'), str_contains($name, 'shipment') => 'ready_for_shipment',
+            str_contains($name, 'ship'), str_contains($name, 'dispatch'), str_contains($name, 'sent') => 'shipped',
+            default => 'new',
         };
     }
 

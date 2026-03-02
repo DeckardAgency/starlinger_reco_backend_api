@@ -84,10 +84,7 @@ class OrderInfoRequestProcessor implements ProcessorInterface
         // Update item info status to pending
         $orderItem->setInfoStatus(OrderItem::INFO_STATUS_PENDING_INFO);
 
-        // Transition order to more_info if not already
-        if ($order->getStatus() !== Order::STATUS_MORE_INFO) {
-            $this->tryTransitionToMoreInfo($order);
-        }
+        // Info requests work at item level; no order status transition needed
 
         $this->logger->info('Info request created', [
             'info_request_id' => $infoRequest->getId(),
@@ -216,11 +213,7 @@ class OrderInfoRequestProcessor implements ProcessorInterface
                     $orderItem->setInfoStatus(OrderItem::INFO_STATUS_PENDING_INFO);
                 }
 
-                // Transition order back to more_info if needed
-                $order = $infoRequest->getOrder();
-                if ($order && $order->getStatus() === Order::STATUS_INFORMATION_PROVIDED) {
-                    $this->tryTransitionToMoreInfo($order);
-                }
+                // Info requests work at item level; no order status transition needed
 
                 if ($infoRequest->getId()) {
                     $this->messageBus->dispatch(new OrderInfoRequestMessage(
@@ -234,42 +227,15 @@ class OrderInfoRequestProcessor implements ProcessorInterface
 
     private function tryTransitionToMoreInfo(Order $order): void
     {
-        $validStatuses = [
-            Order::STATUS_SUBMITTED,
-            Order::STATUS_IN_REVIEW,
-            Order::STATUS_INFORMATION_PROVIDED
-        ];
-
-        if (in_array($order->getStatus(), $validStatuses)) {
-            if ($this->orderStateMachine->can($order, 'request_more_info')) {
-                $this->orderStateMachine->apply($order, 'request_more_info');
-
-                $this->logger->info('Order transitioned to more_info', [
-                    'order_id' => $order->getId()
-                ]);
-            }
-        }
+        // Legacy statuses don't include more_info — info requests work at item level only
     }
 
     private function checkAndTransitionToInformationProvided(Order $order): void
     {
-        $hasPending = false;
-        foreach ($order->getInfoRequests() as $request) {
-            if ($request->isPending()) {
-                $hasPending = true;
-                break;
-            }
-        }
-
-        if (!$hasPending && $order->getStatus() === Order::STATUS_MORE_INFO) {
-            if ($this->orderStateMachine->can($order, 'provide_information')) {
-                $this->orderStateMachine->apply($order, 'provide_information');
-
-                $this->logger->info('Order transitioned to information_provided', [
-                    'order_id' => $order->getId()
-                ]);
-            }
-        }
+        // Legacy statuses don't include information_provided — info requests work at item level only
+        $this->logger->info('All info requests resolved for order', [
+            'order_id' => $order->getId()
+        ]);
     }
 
     private function checkAndTransitionOrder(Order $order): void

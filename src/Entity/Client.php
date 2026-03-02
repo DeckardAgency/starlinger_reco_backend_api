@@ -54,6 +54,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(SearchFilter::class, properties: [
     'name' => 'partial',
     'code' => 'exact',
+    'email' => 'partial',
     'accountGroup.id' => 'exact'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isArchived', 'isActive'])]

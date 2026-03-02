@@ -154,15 +154,14 @@ use Symfony\Component\Serializer\Annotation\Groups;
 class Order
 {
     public const STATUS_DRAFT = 'draft';
-    public const STATUS_SUBMITTED = 'submitted';
-    public const STATUS_IN_REVIEW = 'in_review';
-    public const STATUS_MORE_INFO = 'more_info';
-    public const STATUS_INFORMATION_PROVIDED = 'information_provided';
-    public const STATUS_IN_PROGRESS = 'in_progress';
-    public const STATUS_COMPLETED = 'completed';
+    public const STATUS_NEW = 'new';
+    public const STATUS_IN_PROCESS = 'in_process';
+    public const STATUS_DELIVERED = 'delivered';
     public const STATUS_CANCELED = 'canceled';
-    public const STATUS_CONFIRMED = 'confirmed';
-    public const STATUS_DISPATCHED = 'dispatched';
+    public const STATUS_REVERSAL = 'reversal';
+    public const STATUS_WAITING_FOR_PAYMENT = 'waiting_for_payment';
+    public const STATUS_READY_FOR_SHIPMENT = 'ready_for_shipment';
+    public const STATUS_SHIPPED = 'shipped';
 
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -189,6 +188,10 @@ class Order
     #[ORM\Column(type: "float", options: ['default' => 0])]
     #[Groups(['order:read'])]
     private float $totalDiscount = 0;
+
+    #[ORM\Column(type: "float", options: ['default' => 0])]
+    #[Groups(['order:read'])]
+    private float $totalTax = 0;
 
     #[ORM\Column(type: "text", nullable: true)]
     #[Groups(['order:read', 'order:write'])]
@@ -368,16 +371,19 @@ class Order
     {
         $total = 0;
         $subtotalBeforeDiscount = 0;
+        $totalTax = 0;
 
         foreach ($this->items as $item) {
             $total += $item->getSubtotal();
             $originalPrice = $item->getOriginalUnitPrice() ?? $item->getUnitPrice();
             $subtotalBeforeDiscount += $originalPrice * $item->getQuantity();
+            $totalTax += $item->getTaxAmount();
         }
 
         $this->totalAmount = $total;
         $this->subtotalBeforeDiscount = $subtotalBeforeDiscount;
         $this->totalDiscount = max(0, $subtotalBeforeDiscount - $total);
+        $this->totalTax = $totalTax;
 
         return $this;
     }
@@ -499,7 +505,7 @@ class Order
         if ($isDraft && $this->status !== self::STATUS_CANCELED) {
             $this->status = self::STATUS_DRAFT;
         } elseif (!$isDraft && $this->status === self::STATUS_DRAFT) {
-            $this->status = self::STATUS_SUBMITTED;
+            $this->status = self::STATUS_NEW;
         }
 
         return $this;
@@ -541,7 +547,7 @@ class Order
     {
         if ($this->isDraft) {
             $this->isDraft = false;
-            $this->status = self::STATUS_SUBMITTED;
+            $this->status = self::STATUS_NEW;
         }
 
         return $this;
@@ -777,6 +783,17 @@ class Order
     public function setTotalDiscount(float $totalDiscount): static
     {
         $this->totalDiscount = $totalDiscount;
+        return $this;
+    }
+
+    public function getTotalTax(): float
+    {
+        return $this->totalTax;
+    }
+
+    public function setTotalTax(float $totalTax): static
+    {
+        $this->totalTax = $totalTax;
         return $this;
     }
 
