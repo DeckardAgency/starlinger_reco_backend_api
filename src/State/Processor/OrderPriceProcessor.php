@@ -101,6 +101,11 @@ final class OrderPriceProcessor implements ProcessorInterface
             }
         }
 
+        // Reject non-draft orders with no items
+        if (!$data->isDraft() && $data->getItems()->isEmpty()) {
+            throw new BadRequestHttpException('Cannot create an order with no items.');
+        }
+
         // Ensure all order items have the correct client-specific prices
         $this->updateOrderItemPrices($data);
 

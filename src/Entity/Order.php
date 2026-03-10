@@ -27,6 +27,7 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 #[ORM\Entity(repositoryClass: OrderRepository::class)]
 #[ORM\Table(name: '`order`')]
 #[ORM\Index(name: "idx_order_status", columns: ["status"])]
@@ -240,7 +241,7 @@ class Order
     /**
      * @var Collection<int, OrderLog>
      */
-    #[ORM\OneToMany(targetEntity: OrderLog::class, mappedBy: 'order', cascade: ['persist'])]
+    #[ORM\OneToMany(targetEntity: OrderLog::class, mappedBy: 'order', cascade: ['persist', 'remove'])]
     #[ORM\OrderBy(['createdAt' => 'DESC'])]
     #[Groups(['order:read'])]
     private Collection $logs;
@@ -298,6 +299,12 @@ class Order
     #[ORM\JoinColumn(nullable: true)]
     #[Groups(['order:read', 'order:write'])]
     private ?DeliveryType $deliveryType = null;
+
+    #[ORM\Column(type: "boolean", options: ["default" => false])]
+    #[Groups(['order:read', 'order:write'])]
+    #[SerializedName('isArchived')]
+    #[ApiFilter(BooleanFilter::class)]
+    private bool $isArchived = false;
 
     public function __construct()
     {
@@ -837,5 +844,16 @@ class Order
         ];
 
         return $urls[strtolower($this->trackingCarrier)] ?? null;
+    }
+
+    public function getIsArchived(): bool
+    {
+        return $this->isArchived;
+    }
+
+    public function setIsArchived(bool $isArchived): static
+    {
+        $this->isArchived = $isArchived;
+        return $this;
     }
 }

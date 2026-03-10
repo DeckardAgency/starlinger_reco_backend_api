@@ -83,6 +83,7 @@ use ApiPlatform\OpenApi\Model;
     'id' => 'exact',
     'slug' => 'exact',
     'name' => 'partial',
+    'partNo' => 'partial',
     'shortDescription' => 'partial',
     'productGroupId' => 'exact',
 ])]
