@@ -14,6 +14,7 @@ use ApiPlatform\Metadata\Put;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiProperty;
+use App\Filter\ClientSearchFilter;
 use App\State\Processor\ClientUsersProcessor;
 use Doctrine\ORM\Mapping as ORM;
 use App\Repository\ClientRepository;
@@ -59,6 +60,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isArchived', 'isActive'])]
 #[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'code', 'vatNumber', 'email', 'isActive', 'purchaseLimit', 'amountSpent'])]
+#[ApiFilter(ClientSearchFilter::class)]
 #[ORM\Entity(repositoryClass: ClientRepository::class)]
 #[ORM\Table]
 #[ORM\Index(name: "idx_client_code", columns: ["code"])]

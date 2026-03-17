@@ -11,6 +11,8 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Annotation\Route;
 use Psr\Log\LoggerInterface;
@@ -19,13 +21,15 @@ class OrderExcelController extends AbstractController
 {
     public function __construct(
         private EntityManagerInterface $entityManager,
-        private LoggerInterface $logger
+        private LoggerInterface $logger,
+        private Security $security
     ) {}
 
     #[Route('/api/orders/export/excel', name: 'orders_export_excel', methods: ['GET'])]
     public function exportToExcel(
         OrderRepository $orderRepository,
-        OrderItemRepository $orderItemRepository
+        OrderItemRepository $orderItemRepository,
+        Request $request
     ): StreamedResponse {
         try {
             ini_set('memory_limit', '512M');
@@ -43,6 +47,7 @@ class OrderExcelController extends AbstractController
                 'Order Number',
                 'User Email',
                 'Status',
+                'Archived',
                 'Created At',
                 'Product ID',
                 'Product Name',
@@ -52,8 +57,17 @@ class OrderExcelController extends AbstractController
 
             $this->writeHeaders($ordersSheet, $orderHeaders);
 
+            // Determine if user-scoped export is needed
+            $currentUser = $this->security->getUser();
+            $isAdmin = $currentUser && in_array('ROLE_ADMIN', $currentUser->getRoles(), true);
+
+            // Read filter parameters from request
+            $orderNumberFilter = $request->query->get('orderNumber');
+            $statusFilters = $request->query->all('status');
+            $clientCodeFilter = $request->query->get('user_client_code') ?? $request->query->get('user.client.code');
+
             // Fetch orders with user data and items (excluding draft orders)
-            $query = $orderRepository->createQueryBuilder('o')
+            $qb = $orderRepository->createQueryBuilder('o')
                 ->leftJoin('o.user', 'u')
                 ->leftJoin('o.items', 'i')
                 ->leftJoin('i.product', 'p')
@@ -61,8 +75,30 @@ class OrderExcelController extends AbstractController
                 ->where('o.status != :draftStatus')
                 ->setParameter('draftStatus', 'draft')
                 ->orderBy('o.orderNumber', 'ASC')
-                ->addOrderBy('i.id', 'ASC')
-                ->getQuery();
+                ->addOrderBy('i.id', 'ASC');
+
+            if (!$isAdmin && $currentUser) {
+                $qb->andWhere('u.id = :currentUserId')
+                   ->setParameter('currentUserId', $currentUser->getId());
+            }
+
+            if ($orderNumberFilter) {
+                $qb->andWhere('o.orderNumber LIKE :orderNumber')
+                   ->setParameter('orderNumber', '%' . $orderNumberFilter . '%');
+            }
+
+            if (!empty($statusFilters)) {
+                $qb->andWhere('o.status IN (:statuses)')
+                   ->setParameter('statuses', $statusFilters);
+            }
+
+            if ($clientCodeFilter) {
+                $qb->leftJoin('u.client', 'c')
+                   ->andWhere('c.code = :clientCode')
+                   ->setParameter('clientCode', $clientCodeFilter);
+            }
+
+            $query = $qb->getQuery();
 
             $row = 2;
             $lastOrderId = null;
@@ -102,7 +138,7 @@ class OrderExcelController extends AbstractController
             }
 
             // Add autofilter
-            $ordersSheet->setAutoFilter('A1:I' . ($row - 1));
+            $ordersSheet->setAutoFilter('A1:J' . ($row - 1));
 
             // Create separate Order Items sheet for detailed view
             $itemsSheet = $spreadsheet->createSheet();
@@ -121,15 +157,37 @@ class OrderExcelController extends AbstractController
             $this->writeHeaders($itemsSheet, $itemHeaders);
 
             // Fetch all order items with complete data (excluding draft orders)
-            $itemsQuery = $orderItemRepository->createQueryBuilder('oi')
+            $itemsQb = $orderItemRepository->createQueryBuilder('oi')
                 ->join('oi.orderRef', 'o')
                 ->join('oi.product', 'p')
                 ->leftJoin('o.user', 'u')
                 ->select('oi', 'o', 'p', 'u')
                 ->where('o.status != :draftStatus')
                 ->setParameter('draftStatus', 'draft')
-                ->orderBy('o.orderNumber', 'ASC')
-                ->getQuery();
+                ->orderBy('o.orderNumber', 'ASC');
+
+            if (!$isAdmin && $currentUser) {
+                $itemsQb->andWhere('u.id = :currentUserId')
+                        ->setParameter('currentUserId', $currentUser->getId());
+            }
+
+            if ($orderNumberFilter) {
+                $itemsQb->andWhere('o.orderNumber LIKE :orderNumber')
+                        ->setParameter('orderNumber', '%' . $orderNumberFilter . '%');
+            }
+
+            if (!empty($statusFilters)) {
+                $itemsQb->andWhere('o.status IN (:statuses)')
+                        ->setParameter('statuses', $statusFilters);
+            }
+
+            if ($clientCodeFilter) {
+                $itemsQb->leftJoin('u.client', 'c')
+                        ->andWhere('c.code = :clientCode')
+                        ->setParameter('clientCode', $clientCodeFilter);
+            }
+
+            $itemsQuery = $itemsQb->getQuery();
 
             $row = 2;
             foreach ($itemsQuery->getResult() as $orderItem) {
@@ -161,10 +219,12 @@ class OrderExcelController extends AbstractController
             // Add autofilter to items sheet
             $itemsSheet->setAutoFilter('A1:G' . ($row - 1));
 
-            // Create Summary sheet
-            $summarySheet = $spreadsheet->createSheet();
-            $summarySheet->setTitle('Summary');
-            $this->createSummarySheet($summarySheet, $orderRepository);
+            // Create Summary sheet (only for bulk exports, not single-order)
+            if (!$orderNumberFilter) {
+                $summarySheet = $spreadsheet->createSheet();
+                $summarySheet->setTitle('Summary');
+                $this->createSummarySheet($summarySheet, $orderRepository, $isAdmin ? null : $currentUser);
+            }
 
             // Create the writer
             $writer = new Xlsx($spreadsheet);
@@ -195,23 +255,24 @@ class OrderExcelController extends AbstractController
         $sheet->setCellValue('B' . $row, $order->getOrderNumber());
         $sheet->setCellValue('C' . $row, $user ? $user->getEmail() : '');
         $sheet->setCellValue('D' . $row, $order->getStatus());
-        $sheet->setCellValue('E' . $row, $order->getCreatedAt() ? $order->getCreatedAt()->format('Y-m-d H:i:s') : '');
+        $sheet->setCellValue('E' . $row, $order->getIsArchived() ? 'Yes' : 'No');
+        $sheet->setCellValue('F' . $row, $order->getCreatedAt() ? $order->getCreatedAt()->format('Y-m-d H:i:s') : '');
 
         if ($item) {
             $product = $item->getProduct();
-            $sheet->setCellValue('F' . $row, $product->getId());
-            $sheet->setCellValue('G' . $row, $product->getName());
-            $sheet->setCellValue('H' . $row, $product->getPartNo() ?? '');
-            $sheet->setCellValue('I' . $row, $item->getQuantity());
+            $sheet->setCellValue('G' . $row, $product->getId());
+            $sheet->setCellValue('H' . $row, $product->getName());
+            $sheet->setCellValue('I' . $row, $product->getPartNo() ?? '');
+            $sheet->setCellValue('J' . $row, $item->getQuantity());
         } else {
-            $sheet->setCellValue('F' . $row, '');
             $sheet->setCellValue('G' . $row, '');
             $sheet->setCellValue('H' . $row, '');
             $sheet->setCellValue('I' . $row, '');
+            $sheet->setCellValue('J' . $row, '');
         }
 
         // Apply borders to all cells
-        $sheet->getStyle('A' . $row . ':I' . $row)->applyFromArray([
+        $sheet->getStyle('A' . $row . ':J' . $row)->applyFromArray([
             'borders' => [
                 'allBorders' => [
                     'borderStyle' => Border::BORDER_THIN,
@@ -223,8 +284,8 @@ class OrderExcelController extends AbstractController
 
     private function mergeOrderCells($sheet, int $startRow, int $endRow): void
     {
-        // Merge cells for order-level data (columns A-E)
-        $columnsToMerge = ['A', 'B', 'C', 'D', 'E'];
+        // Merge cells for order-level data (columns A-F)
+        $columnsToMerge = ['A', 'B', 'C', 'D', 'E', 'F'];
 
         foreach ($columnsToMerge as $column) {
             $sheet->mergeCells("{$column}{$startRow}:{$column}{$endRow}");
@@ -237,7 +298,7 @@ class OrderExcelController extends AbstractController
 
         // Apply alternating row color to the entire order block
         if ($startRow % 2 == 0) {
-            $sheet->getStyle("A{$startRow}:I{$endRow}")->applyFromArray([
+            $sheet->getStyle("A{$startRow}:J{$endRow}")->applyFromArray([
                 'fill' => [
                     'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => 'F2F2F2']
@@ -246,7 +307,7 @@ class OrderExcelController extends AbstractController
         }
     }
 
-    private function createSummarySheet($sheet, OrderRepository $orderRepository): void
+    private function createSummarySheet($sheet, OrderRepository $orderRepository, $filterUser = null): void
     {
         $sheet->setCellValue('A1', 'Order Export Summary');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
@@ -255,21 +316,31 @@ class OrderExcelController extends AbstractController
         $sheet->setCellValue('B3', date('Y-m-d H:i:s'));
 
         // Calculate statistics (excluding draft orders)
-        $totalOrders = $orderRepository->createQueryBuilder('o')
+        $totalQb = $orderRepository->createQueryBuilder('o')
             ->select('COUNT(o.id)')
+            ->leftJoin('o.user', 'u')
             ->where('o.status != :draftStatus')
-            ->setParameter('draftStatus', 'draft')
-            ->getQuery()
-            ->getSingleScalarResult();
+            ->setParameter('draftStatus', 'draft');
+
+        if ($filterUser) {
+            $totalQb->andWhere('u.id = :userId')->setParameter('userId', $filterUser->getId());
+        }
+
+        $totalOrders = $totalQb->getQuery()->getSingleScalarResult();
 
         // Count orders by status (excluding draft orders)
-        $statusStats = $orderRepository->createQueryBuilder('o')
+        $statusQb = $orderRepository->createQueryBuilder('o')
             ->select('o.status', 'COUNT(o.id) as count')
+            ->leftJoin('o.user', 'u')
             ->where('o.status != :draftStatus')
             ->setParameter('draftStatus', 'draft')
-            ->groupBy('o.status')
-            ->getQuery()
-            ->getResult();
+            ->groupBy('o.status');
+
+        if ($filterUser) {
+            $statusQb->andWhere('u.id = :userId')->setParameter('userId', $filterUser->getId());
+        }
+
+        $statusStats = $statusQb->getQuery()->getResult();
 
         $sheet->setCellValue('A5', 'Total Orders:');
         $sheet->setCellValue('B5', $totalOrders);

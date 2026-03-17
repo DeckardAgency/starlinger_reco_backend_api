@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Filter\NoClientFilter;
+use App\Filter\UserSearchFilter;
 use App\Repository\UserRepository;
 use App\State\Processor\UserPasswordHasher;
 use App\Validator\ActiveUserLimit;
@@ -41,6 +42,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(SearchFilter::class, properties: ['email' => 'exact', 'client.code' => 'exact', 'client.id' => 'exact', 'roles' => 'partial'])]
 #[ApiFilter(OrderFilter::class, properties: ['id', 'email', 'firstName', 'lastName'])]
 #[ApiFilter(NoClientFilter::class)]
+#[ApiFilter(UserSearchFilter::class)]
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: '`user`')]
 #[UniqueEntity('email')]

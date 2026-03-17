@@ -14,6 +14,7 @@ use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Serializer\Filter\PropertyFilter;
+use App\Filter\ProductSearchFilter;
 use App\Repository\ProductRepository;
 use DateTimeInterface;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -88,6 +89,7 @@ use ApiPlatform\OpenApi\Model;
     'productGroupId' => 'exact',
 ])]
 #[ApiFilter(PropertyFilter::class)]
+#[ApiFilter(ProductSearchFilter::class)]
 class Product
 {
     #[ORM\Id]
