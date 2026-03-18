@@ -59,18 +59,18 @@ class TaxType
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column(type: 'integer')]
-    #[Groups(['tax_type:read', 'country:read', 'product:read'])]
+    #[Groups(['tax_type:read', 'country:read', 'product:read', 'address:read'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank]
-    #[Groups(['tax_type:read', 'tax_type:write', 'country:read', 'product:read'])]
+    #[Groups(['tax_type:read', 'tax_type:write', 'country:read', 'product:read', 'address:read'])]
     private ?string $name = null;
 
     #[ORM\Column(type: 'decimal', precision: 5, scale: 2)]
     #[Assert\NotNull]
     #[Assert\PositiveOrZero]
-    #[Groups(['tax_type:read', 'tax_type:write', 'country:read', 'product:read'])]
+    #[Groups(['tax_type:read', 'tax_type:write', 'country:read', 'product:read', 'address:read'])]
     private ?string $percent = null;
 
     #[ORM\Column(type: 'integer', nullable: true)]

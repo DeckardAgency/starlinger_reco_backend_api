@@ -94,7 +94,7 @@ class Country
 
     #[ORM\ManyToOne(targetEntity: TaxType::class)]
     #[ORM\JoinColumn(nullable: true)]
-    #[Groups(['country:read', 'country:write'])]
+    #[Groups(['country:read', 'country:write', 'address:read'])]
     private ?TaxType $taxType = null;
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]

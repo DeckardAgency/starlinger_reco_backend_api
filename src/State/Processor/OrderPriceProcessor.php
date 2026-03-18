@@ -9,6 +9,7 @@ use App\Entity\OrderItem;
 use App\Entity\User;
 use App\Message\OrderCreatedMessage;
 use App\Message\OrderStatusChangedMessage;
+use App\Service\DiscountResolver;
 use App\Service\PriceCalculator;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -28,6 +29,7 @@ final class OrderPriceProcessor implements ProcessorInterface
         private ProcessorInterface $persistProcessor,
         private EntityManagerInterface $entityManager,
         private PriceCalculator $priceCalculator,
+        private DiscountResolver $discountResolver,
         private LoggerInterface $logger,
         private Security $security,
         private MessageBusInterface $messageBus,
@@ -261,6 +263,16 @@ final class OrderPriceProcessor implements ProcessorInterface
                 }
             }
 
+            // Apply discount (campaign or product-level) on top of resolved price
+            $resolved = $this->discountResolver->resolveDiscount($product, $client);
+            if ($resolved !== null) {
+                if ($resolved->fixedPrice !== null) {
+                    $price = min($price, $resolved->fixedPrice);
+                } elseif ($resolved->percent > 0) {
+                    $price = round($price * (1 - $resolved->percent / 100), 2);
+                }
+            }
+
             // Store the original catalog price for discount tracking
             $originalPrice = $product->getPrice();
             $item->setOriginalUnitPrice($originalPrice);
@@ -286,7 +298,8 @@ final class OrderPriceProcessor implements ProcessorInterface
         if ($client) {
             foreach ($client->getAddresses() as $address) {
                 if ($address->getIsDelivery() && $address->getIsActive() && $address->getCountry()) {
-                    $countryTaxPercent = $address->getCountry()->getDefaultTaxPercent();
+                    $country = $address->getCountry();
+                    $countryTaxPercent = $country->getTaxType()?->getPercent() ?? $country->getDefaultTaxPercent();
                     if ($countryTaxPercent !== null) {
                         $taxPercent = (float) $countryTaxPercent;
                     }

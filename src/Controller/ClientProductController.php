@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Repository\ClientProductPriceRepository;
 use App\Repository\ClientRepository;
 use App\Repository\ProductRepository;
+use App\Service\DiscountResolver;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -21,7 +22,8 @@ class ClientProductController extends AbstractController
         private ProductRepository $productRepository,
         private ClientProductPriceRepository $clientProductPriceRepository,
         private SerializerInterface $serializer,
-        private EntityManagerInterface $entityManager
+        private EntityManagerInterface $entityManager,
+        private DiscountResolver $discountResolver
     ) {}
 
     #[Route('/client/{clientId}/products/debug-relations', name: 'api_client_products_debug_relations', methods: ['GET'])]
@@ -52,9 +54,16 @@ class ClientProductController extends AbstractController
             $allClientPrices = $this->clientProductPriceRepository->findBy(['client' => $client]);
             $filteredClientPrices = $this->applyFilters($allClientPrices, $filters);
 
-            $formattedProducts = $this->formatProductsResponse($filteredClientPrices);
+            $formattedProducts = $this->formatProductsResponse($filteredClientPrices, $client);
 
-            $response = $this->buildResponse($clientId, $formattedProducts, $allClientPrices, $filteredClientPrices, $filters);
+            // Apply pagination
+            $totalItems = count($formattedProducts);
+            $page = $filters['page'];
+            $itemsPerPage = $filters['itemsPerPage'];
+            $offset = ($page - 1) * $itemsPerPage;
+            $pagedProducts = array_slice($formattedProducts, $offset, $itemsPerPage);
+
+            $response = $this->buildResponse($clientId, $pagedProducts, $totalItems, $filters);
 
             return $this->json($response);
         } catch (\Exception $e) {
@@ -121,10 +130,13 @@ class ClientProductController extends AbstractController
     private function extractFilters(Request $request): array
     {
         return [
+            'search' => $request->query->get('search'),
             'productName' => $request->query->get('product.name')
                 ?: $request->query->get('product_name'),
             'productPartNo' => $request->query->get('product.partNo')
                 ?: $request->query->get('product_partNo'),
+            'page' => max(1, (int) ($request->query->get('page') ?: 1)),
+            'itemsPerPage' => min(100, max(1, (int) ($request->query->get('itemsPerPage') ?: 30))),
         ];
     }
 
@@ -148,12 +160,19 @@ class ClientProductController extends AbstractController
 
     private function productMatchesFilters(object $product, array $filters): bool
     {
-        // Apply product name filter
+        // OR search: if 'search' param is set, match name OR partNo
+        if (!empty($filters['search'])) {
+            $q = $filters['search'];
+            $nameMatch = stripos($product->getName() ?? '', $q) !== false;
+            $partNoMatch = stripos($product->getPartNo() ?? '', $q) !== false;
+            return $nameMatch || $partNoMatch;
+        }
+
+        // Individual filters use AND logic
         if ($filters['productName'] && stripos($product->getName(), $filters['productName']) === false) {
             return false;
         }
 
-        // Apply product part number filter
         if ($filters['productPartNo'] && stripos($product->getPartNo(), $filters['productPartNo']) === false) {
             return false;
         }
@@ -161,12 +180,33 @@ class ClientProductController extends AbstractController
         return true;
     }
 
-    private function formatProductsResponse(array $clientPrices): array
+    private function formatProductsResponse(array $clientPrices, object $client): array
     {
         $formattedProducts = [];
 
         foreach ($clientPrices as $clientProductPrice) {
             $product = $clientProductPrice->getProduct();
+
+            // Resolve discount (campaign or product-level)
+            $effectivePrice = $clientProductPrice->getEffectivePrice();
+            $resolved = $this->discountResolver->resolveDiscount($product, $client);
+            $discountedPrice = $effectivePrice;
+            $hasDiscount = false;
+            $discountPercent = 0.0;
+
+            if ($resolved !== null) {
+                $hasDiscount = true;
+                if ($resolved->fixedPrice !== null) {
+                    $discountedPrice = min($effectivePrice, $resolved->fixedPrice);
+                } elseif ($resolved->percent > 0) {
+                    $discountedPrice = round($effectivePrice * (1 - $resolved->percent / 100), 2);
+                    $discountPercent = $resolved->percent;
+                }
+                // Calculate percent from prices if fixed price was used
+                if ($resolved->fixedPrice !== null && $effectivePrice > 0 && $discountedPrice < $effectivePrice) {
+                    $discountPercent = round(($effectivePrice - $discountedPrice) / $effectivePrice * 100, 2);
+                }
+            }
 
             $formattedProducts[] = [
                 '@id' => '/api/v1/products/' . $product->getId(),
@@ -184,7 +224,10 @@ class ClientProductController extends AbstractController
                 'regularPrice' => $product->getPrice(),
                 'clientPrice' => $clientProductPrice->getPrice(),
                 'discountPercentage' => $clientProductPrice->getDiscountPercentage(),
-                'effectivePrice' => $clientProductPrice->getEffectivePrice(),
+                'effectivePrice' => $effectivePrice,
+                'discountedPrice' => round($discountedPrice, 2),
+                'discountPercent' => $discountPercent,
+                'hasDiscount' => $hasDiscount,
                 'isValid' => $clientProductPrice->isValid(),
                 'validFrom' => $clientProductPrice->getValidFrom()?->format('Y-m-d\TH:i:sP'),
                 'validUntil' => $clientProductPrice->getValidUntil()?->format('Y-m-d\TH:i:sP'),
@@ -234,59 +277,18 @@ class ClientProductController extends AbstractController
         return $gallery;
     }
 
-    private function buildResponse(string $clientId, array $formattedProducts, array $allClientPrices, array $filteredClientPrices, array $filters): array
+    private function buildResponse(string $clientId, array $pagedProducts, int $totalItems, array $filters): array
     {
         $response = [
             '@context' => '/api/v1/contexts/ClientProduct',
             '@id' => '/api/v1/client/' . $clientId . '/products',
             '@type' => 'hydra:Collection',
-            'hydra:totalItems' => count($formattedProducts),
-            'hydra:member' => $formattedProducts,
+            'totalItems' => $totalItems,
+            'member' => $pagedProducts,
         ];
-
-        // Add debug info only in development
-        if ($this->getParameter('kernel.environment') !== 'prod') {
-            $response['debug'] = [
-                'total_client_prices_before_filter' => count($allClientPrices),
-                'total_after_filter' => count($filteredClientPrices),
-                'applied_filters' => $filters,
-                'filter_params_detected' => [
-                    'product.name' => !empty($filters['productName']),
-                    'product.partNo' => !empty($filters['productPartNo'])
-                ]
-            ];
-        }
-
-        // Add search template if filters are available
-        if (array_filter($filters)) {
-            $response['hydra:search'] = $this->buildSearchTemplate($clientId);
-        }
 
         return $response;
     }
-    private function buildSearchTemplate(string $clientId): array
-    {
-        return [
-            '@type' => 'hydra:IriTemplate',
-            'hydra:template' => '/api/v1/client/' . $clientId . '/products{?product.name,product.partNo}',
-            'hydra:variableRepresentation' => 'BasicRepresentation',
-            'hydra:mapping' => [
-                [
-                    '@type' => 'IriTemplateMapping',
-                    'variable' => 'product.name',
-                    'property' => 'product.name',
-                    'required' => false
-                ],
-                [
-                    '@type' => 'IriTemplateMapping',
-                    'variable' => 'product.partNo',
-                    'property' => 'product.partNo',
-                    'required' => false
-                ]
-            ]
-        ];
-    }
-
     private function checkPermissions(): void
     {
         if (!$this->isGranted('ROLE_ADMIN') && !$this->isGranted('ROLE_CLIENT_MANAGER')) {
