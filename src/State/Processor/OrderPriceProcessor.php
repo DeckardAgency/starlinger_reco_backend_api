@@ -9,6 +9,7 @@ use App\Entity\OrderItem;
 use App\Entity\User;
 use App\Message\OrderCreatedMessage;
 use App\Message\OrderStatusChangedMessage;
+use App\Entity\TaxType;
 use App\Service\DiscountResolver;
 use App\Service\PriceCalculator;
 use Doctrine\ORM\EntityManagerInterface;
@@ -293,24 +294,34 @@ final class OrderPriceProcessor implements ProcessorInterface
             $item->setQuantity($item->getQuantity()); // This triggers subtotal recalculation
         }
 
-        // Determine tax rate from shipping address country
-        $taxPercent = 0;
+        // Determine fallback tax rate from shipping address country
+        $countryTaxPercent = 0;
         if ($client) {
             foreach ($client->getAddresses() as $address) {
                 if ($address->getIsDelivery() && $address->getIsActive() && $address->getCountry()) {
                     $country = $address->getCountry();
-                    $countryTaxPercent = $country->getTaxType()?->getPercent() ?? $country->getDefaultTaxPercent();
-                    if ($countryTaxPercent !== null) {
-                        $taxPercent = (float) $countryTaxPercent;
+                    $resolved = $country->getTaxType()?->getPercent() ?? $country->getDefaultTaxPercent();
+                    if ($resolved !== null) {
+                        $countryTaxPercent = (float) $resolved;
                     }
                     break;
                 }
             }
         }
 
-        // Apply tax rate to all items
+        // Apply tax rate per item: product tax type takes priority over country
         foreach ($order->getItems() as $item) {
-            $item->setTaxPercent($taxPercent);
+            $product = $item->getProduct();
+            $itemTaxPercent = $countryTaxPercent;
+
+            if ($product && $product->getTaxTypeId() !== null) {
+                $taxType = $this->entityManager->find(TaxType::class, $product->getTaxTypeId());
+                if ($taxType !== null) {
+                    $itemTaxPercent = (float) $taxType->getPercent();
+                }
+            }
+
+            $item->setTaxPercent($itemTaxPercent);
         }
     }
 

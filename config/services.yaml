@@ -127,6 +127,10 @@ services:
             $legacyConnection: '@doctrine.dbal.legacy_connection'
             $entityManager: '@doctrine.orm.entity_manager'
 
+    App\Command\ImportProductImagesCommand:
+        arguments:
+            $mediaDirectory: '%media_directory%'
+
     # Password Reset Service
     App\Service\PasswordResetService:
         arguments:

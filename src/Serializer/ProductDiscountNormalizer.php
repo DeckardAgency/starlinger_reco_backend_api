@@ -3,7 +3,9 @@
 namespace App\Serializer;
 
 use App\Entity\Product;
+use App\Entity\TaxType;
 use App\Service\DiscountResolver;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
@@ -17,7 +19,8 @@ class ProductDiscountNormalizer implements NormalizerInterface, NormalizerAwareI
 
     public function __construct(
         private DiscountResolver $discountResolver,
-        private Security $security
+        private Security $security,
+        private EntityManagerInterface $entityManager
     ) {}
 
     public function normalize(mixed $object, ?string $format = null, array $context = []): array|string|int|float|bool|\ArrayObject|null
@@ -55,6 +58,15 @@ class ProductDiscountNormalizer implements NormalizerInterface, NormalizerAwareI
             $data['campaignDiscountPercent'] = 0;
             $data['discountedPrice'] = null;
             $data['discountSource'] = null;
+        }
+
+        // Resolve product-level tax percent from taxTypeId
+        $data['taxPercent'] = null;
+        if ($object->getTaxTypeId() !== null) {
+            $taxType = $this->entityManager->find(TaxType::class, $object->getTaxTypeId());
+            if ($taxType !== null) {
+                $data['taxPercent'] = (float) $taxType->getPercent();
+            }
         }
 
         return $data;

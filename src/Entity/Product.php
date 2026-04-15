@@ -99,7 +99,6 @@ class Product
     private ?int $id = null;
 
     #[ORM\Column(length: 255)]
-    #[Gedmo\Slug(fields: ["partNo"])]
     #[Groups(['product:read', 'product:write', 'order_item:read', 'order:read'])]
     private ?string $name = null;
 
