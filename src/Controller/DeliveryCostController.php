@@ -5,6 +5,8 @@ namespace App\Controller;
 use App\Repository\CountryRepository;
 use App\Repository\DeliveryPriceRepository;
 use App\Repository\DeliveryTypeRepository;
+use App\Repository\FuelSurchargeRepository;
+use App\Repository\PackagingPriceRepository;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -15,7 +17,9 @@ class DeliveryCostController extends AbstractController
     public function __construct(
         private DeliveryPriceRepository $deliveryPriceRepository,
         private DeliveryTypeRepository $deliveryTypeRepository,
-        private CountryRepository $countryRepository
+        private CountryRepository $countryRepository,
+        private FuelSurchargeRepository $fuelSurchargeRepository,
+        private PackagingPriceRepository $packagingPriceRepository
     ) {}
 
     #[Route('/api/v1/delivery-cost/calculate', name: 'delivery_cost_calculate', methods: ['GET'])]
@@ -39,6 +43,10 @@ class DeliveryCostController extends AbstractController
         if ($dhlZone === null) {
             return $this->json([
                 'deliveryCost' => 0,
+                'fuelSurchargeMultiplier' => 1.0,
+                'fuelSurchargeCost' => 0,
+                'packagingCost' => 0,
+                'totalShippingCost' => 0,
                 'deliveryDays' => null,
                 'message' => 'No DHL zone configured for this country'
             ]);
@@ -61,6 +69,10 @@ class DeliveryCostController extends AbstractController
         if (!$deliveryType) {
             return $this->json([
                 'deliveryCost' => 0,
+                'fuelSurchargeMultiplier' => 1.0,
+                'fuelSurchargeCost' => 0,
+                'packagingCost' => 0,
+                'totalShippingCost' => 0,
                 'deliveryDays' => null,
                 'message' => 'No delivery type available'
             ]);
@@ -76,6 +88,10 @@ class DeliveryCostController extends AbstractController
         if (!$deliveryPrice) {
             return $this->json([
                 'deliveryCost' => 0,
+                'fuelSurchargeMultiplier' => 1.0,
+                'fuelSurchargeCost' => 0,
+                'packagingCost' => 0,
+                'totalShippingCost' => 0,
                 'deliveryDays' => null,
                 'deliveryTypeName' => $deliveryType->getName(),
                 'dhlZone' => $dhlZone,
@@ -100,8 +116,26 @@ class DeliveryCostController extends AbstractController
             $totalCost += $steps * $priceBaseStep;
         }
 
+        $deliveryCost = round($totalCost, 2);
+
+        // Apply fuel surcharge multiplier
+        $fuelSurchargeEntity = $this->fuelSurchargeRepository->findLatestForDeliveryType($deliveryType);
+        $fuelSurchargeMultiplier = $fuelSurchargeEntity ? (float) $fuelSurchargeEntity->getFuelSurcharge() : 1.0;
+        $fuelSurchargeCost = round($deliveryCost * $fuelSurchargeMultiplier - $deliveryCost, 2);
+        $deliveryCostWithFuel = round($deliveryCost * $fuelSurchargeMultiplier, 2);
+
+        // Look up packaging cost by weight
+        $packagingPriceEntity = $this->packagingPriceRepository->findPriceForSize($weight);
+        $packagingCost = $packagingPriceEntity ? round((float) $packagingPriceEntity->getPriceBase(), 2) : 0.0;
+
+        $totalShippingCost = round($deliveryCostWithFuel + $packagingCost, 2);
+
         return $this->json([
-            'deliveryCost' => round($totalCost, 2),
+            'deliveryCost' => $deliveryCost,
+            'fuelSurchargeMultiplier' => $fuelSurchargeMultiplier,
+            'fuelSurchargeCost' => $fuelSurchargeCost,
+            'packagingCost' => $packagingCost,
+            'totalShippingCost' => $totalShippingCost,
             'deliveryDays' => $deliveryPrice->getDeliveryDays(),
             'deliveryTypeName' => $deliveryType->getName(),
             'dhlZone' => $dhlZone,
