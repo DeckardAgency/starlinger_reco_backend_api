@@ -172,14 +172,6 @@ class Client
     #[Groups(['client:read', 'client:write', 'user:read', 'order:read'])]
     private bool $isArchived = false;
 
-    #[ORM\Column(type: 'boolean', options: ['default' => false])]
-    #[Groups(['client:read', 'client:write'])]
-    private bool $isLegalEntity = false;
-
-    #[ORM\Column(length: 50, nullable: true)]
-    #[Groups(['client:read', 'client:write'])]
-    private ?string $accountType = null;
-
     #[ORM\ManyToOne(targetEntity: AccountGroup::class)]
     #[ORM\JoinColumn(name: 'account_group_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     #[Groups(['client:read', 'client:write'])]
@@ -471,28 +463,6 @@ class Client
             $this->isActive = false;
         }
 
-        return $this;
-    }
-
-    public function getIsLegalEntity(): bool
-    {
-        return $this->isLegalEntity;
-    }
-
-    public function setIsLegalEntity(bool $isLegalEntity): static
-    {
-        $this->isLegalEntity = $isLegalEntity;
-        return $this;
-    }
-
-    public function getAccountType(): ?string
-    {
-        return $this->accountType;
-    }
-
-    public function setAccountType(?string $accountType): static
-    {
-        $this->accountType = $accountType;
         return $this;
     }
 

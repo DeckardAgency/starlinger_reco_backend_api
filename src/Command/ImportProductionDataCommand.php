@@ -616,8 +616,6 @@ class ImportProductionDataCommand extends Command
                 'max_active_users' => null,
                 'is_active' => $this->toBool($row['is_active'] ?? 1),
                 'is_archived' => 0,
-                'is_legal_entity' => $this->toBool($row['is_legal_entity'] ?? 0),
-                'account_type' => null,
                 'account_group_id' => $accountGroupId,
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
