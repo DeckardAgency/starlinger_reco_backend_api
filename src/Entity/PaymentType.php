@@ -51,7 +51,6 @@ use Symfony\Component\Validator\Constraints as Assert;
 )]
 #[ApiFilter(SearchFilter::class, properties: [
     'name' => 'partial',
-    'providerCode' => 'exact',
     'remoteCode' => 'exact'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isActive', 'enableInstallments', 'allowRecurringPayment'])]
@@ -74,14 +73,6 @@ class PaymentType
     #[ORM\Column(type: 'text', nullable: true)]
     #[Groups(['payment_type:read', 'payment_type:write'])]
     private ?string $shortDescription = null;
-
-    #[ORM\Column(length: 50, nullable: true)]
-    #[Groups(['payment_type:read', 'payment_type:write'])]
-    private ?string $providerCode = null;
-
-    #[ORM\Column(type: 'json', nullable: true)]
-    #[Groups(['payment_type:read', 'payment_type:write'])]
-    private ?array $configuration = null;
 
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     #[Groups(['payment_type:read', 'payment_type:write'])]
@@ -186,28 +177,6 @@ class PaymentType
     public function setShortDescription(?string $shortDescription): static
     {
         $this->shortDescription = $shortDescription;
-        return $this;
-    }
-
-    public function getProviderCode(): ?string
-    {
-        return $this->providerCode;
-    }
-
-    public function setProviderCode(?string $providerCode): static
-    {
-        $this->providerCode = $providerCode;
-        return $this;
-    }
-
-    public function getConfiguration(): ?array
-    {
-        return $this->configuration;
-    }
-
-    public function setConfiguration(?array $configuration): static
-    {
-        $this->configuration = $configuration;
         return $this;
     }
 

@@ -103,6 +103,9 @@ class OrderCreatedMessageHandler
             // Send email to the customer if there's a valid user with email
             $this->sendCustomerNotification($order);
 
+            // Send email to Finance users belonging to the same client
+            $this->sendFinanceNotifications($order);
+
         } catch (\Exception $e) {
             $this->logger->error('Error in OrderCreatedMessageHandler', [
                 'exception' => get_class($e),
@@ -243,6 +246,76 @@ class OrderCreatedMessageHandler
                 'order_id' => $order->getId()            ]);
 
             // Don't re-throw - email failure shouldn't break the process
+        }
+    }
+
+    /**
+     * Notify all ROLE_FINANCE users belonging to the order's client
+     * (Finance users only receive notifications, they have no webshop access).
+     */
+    private function sendFinanceNotifications(Order $order): void
+    {
+        try {
+            $client = $order->getUser()?->getClient();
+            if (!$client) {
+                return;
+            }
+
+            $qb = $this->entityManager->createQueryBuilder();
+            $qb->select('u')
+                ->from(\App\Entity\User::class, 'u')
+                ->where('u.client = :client')
+                ->andWhere('u.isActive = true')
+                ->andWhere('u.roles LIKE :role')
+                ->setParameter('client', $client)
+                ->setParameter('role', '%ROLE_FINANCE%');
+
+            $financeUsers = $qb->getQuery()->getResult();
+
+            if (empty($financeUsers)) {
+                return;
+            }
+
+            $items = $this->priceCalculator->getOrderItemsDetails($order);
+            $totalAmount = $this->priceCalculator->calculateOrderTotal($order);
+
+            $templateParams = [
+                'order' => $order,
+                'user' => $order->getUser(),
+                'items' => $items,
+                'totalAmount' => $totalAmount,
+                'base_url' => $this->getBaseUrl(),
+                'isFirstTimeCustomer' => false,
+                'supportEmail' => $_ENV['SUPPORT_EMAIL'] ?? 'support@starlinger.com',
+                'supportPhone' => $_ENV['SUPPORT_PHONE'] ?? '+43 1 234 5678',
+            ];
+
+            $htmlContent = $this->twig->render('emails/customer/order_confirmation.html.twig', $templateParams);
+
+            foreach ($financeUsers as $financeUser) {
+                if (!$financeUser->getEmail()) {
+                    continue;
+                }
+
+                $email = (new Email())
+                    ->from(new Address($this->senderEmail, 'Starlinger Orders'))
+                    ->to(new Address($financeUser->getEmail(), $financeUser->getFullName() ?? 'Finance'))
+                    ->subject('Order placed: #' . $order->getOrderNumber())
+                    ->html($htmlContent);
+
+                $this->mailer->send($email);
+
+                $this->logger->info('Finance notification sent', [
+                    'recipient' => $financeUser->getEmail(),
+                    'order' => $order->getOrderNumber(),
+                ]);
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to send finance notifications', [
+                'error' => $e->getMessage(),
+                'order_id' => $order->getId(),
+            ]);
+            // Don't re-throw — email failures shouldn't break the order process
         }
     }
 

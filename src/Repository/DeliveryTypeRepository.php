@@ -48,13 +48,13 @@ class DeliveryTypeRepository extends ServiceEntityRepository
     }
 
     /**
-     * Find delivery types that are actual delivery (not pickup)
+     * Find active delivery types ordered by sort order
      *
      * @return DeliveryType[]
      */
-    public function findDeliveryOnly(): array
+    public function findActive(): array
     {
-        return $this->findBy(['isDelivery' => true, 'isActive' => true], ['sortOrder' => 'ASC']);
+        return $this->findBy(['isActive' => true], ['sortOrder' => 'ASC']);
     }
 
     /**

@@ -202,6 +202,10 @@ class Order
     #[Groups(['order:read', 'order:write'])]
     private ?string $shippingAddress = null;
 
+    #[ORM\Column(name: 'shipping_address_id', type: 'integer', nullable: true)]
+    #[Groups(['order:read', 'order:write'])]
+    private ?int $shippingAddressId = null;
+
     #[ORM\Column(length: 255, nullable: true)]
     #[Groups(['order:read', 'order:write'])]
     private ?string $billingAddress = null;
@@ -414,6 +418,17 @@ class Order
     public function setShippingAddress(?string $shippingAddress): static
     {
         $this->shippingAddress = $shippingAddress;
+        return $this;
+    }
+
+    public function getShippingAddressId(): ?int
+    {
+        return $this->shippingAddressId;
+    }
+
+    public function setShippingAddressId(?int $shippingAddressId): static
+    {
+        $this->shippingAddressId = $shippingAddressId;
         return $this;
     }
 

@@ -48,7 +48,6 @@ use Symfony\Component\Validator\Constraints as Assert;
 )]
 #[ApiFilter(SearchFilter::class, properties: [
     'name' => 'partial',
-    'remoteCode' => 'exact'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isActive'])]
 #[ApiFilter(OrderFilter::class, properties: ['name', 'percent'])]
@@ -76,10 +75,6 @@ class TaxType
     #[ORM\Column(type: 'integer', nullable: true)]
     #[Groups(['tax_type:read', 'tax_type:write'])]
     private ?int $remoteId = null;
-
-    #[ORM\Column(length: 50, nullable: true)]
-    #[Groups(['tax_type:read', 'tax_type:write'])]
-    private ?string $remoteCode = null;
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     #[Groups(['tax_type:read', 'tax_type:write'])]
@@ -137,17 +132,6 @@ class TaxType
     public function setRemoteId(?int $remoteId): static
     {
         $this->remoteId = $remoteId;
-        return $this;
-    }
-
-    public function getRemoteCode(): ?string
-    {
-        return $this->remoteCode;
-    }
-
-    public function setRemoteCode(?string $remoteCode): static
-    {
-        $this->remoteCode = $remoteCode;
         return $this;
     }
 

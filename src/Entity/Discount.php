@@ -94,6 +94,16 @@ class Discount
     #[Groups(['discount:read', 'discount:write'])]
     private ?string $rules = null;
 
+    /**
+     * Optional list of product types this discount applies to (e.g. ['VT'], ['ET'], ['VT','ET']).
+     * Empty/null means no product-type restriction (applies to all products that pass other filters).
+     *
+     * @var string[]|null
+     */
+    #[ORM\Column(name: 'product_types', type: 'json', nullable: true)]
+    #[Groups(['discount:read', 'discount:write'])]
+    private ?array $productTypes = null;
+
     #[ORM\Column(type: "datetime")]
     #[Gedmo\Timestampable(on: "create")]
     #[Groups(['discount:read'])]
@@ -213,6 +223,23 @@ class Discount
     public function setRules(?string $rules): static
     {
         $this->rules = $rules;
+        return $this;
+    }
+
+    /**
+     * @return string[]|null
+     */
+    public function getProductTypes(): ?array
+    {
+        return $this->productTypes;
+    }
+
+    /**
+     * @param string[]|null $productTypes
+     */
+    public function setProductTypes(?array $productTypes): static
+    {
+        $this->productTypes = $productTypes ?: null;
         return $this;
     }
 

@@ -144,9 +144,10 @@ class Product
     #[SerializedName('isActive')]
     private bool $isActive = true;
 
-    #[ORM\Column(name: 'ready_for_shop', type: 'boolean', options: ['default' => false])]
+    #[ORM\Column(name: 'product_type', length: 10, nullable: true)]
+    #[Assert\Choice(choices: ['VT', 'ET'], message: 'Product type must be VT or ET.')]
     #[Groups(['product:read', 'product:write'])]
-    private bool $readyForShop = false;
+    private ?string $productType = null;
 
     #[ORM\Column(type: 'integer', nullable: true)]
     #[Groups(['product:read', 'product:write'])]
@@ -172,10 +173,6 @@ class Product
     #[Groups(['product:read', 'product:write'])]
     private ?string $catalogCode = null;
 
-    #[ORM\Column(name: 'retail_price', type: 'float', nullable: true)]
-    #[Groups(['product:read', 'product:write'])]
-    private ?float $retailPrice = null;
-
     #[ORM\Column(name: 'tax_type_id', type: 'integer', nullable: true)]
     #[Groups(['product:read', 'product:write'])]
     private ?int $taxTypeId = null;
@@ -183,14 +180,6 @@ class Product
     #[ORM\Column(length: 10, nullable: true, options: ['default' => 'EUR'])]
     #[Groups(['product:read', 'product:write'])]
     private ?string $currency = 'EUR';
-
-    #[ORM\Column(name: 'discount_percent', type: 'float', nullable: true)]
-    #[Groups(['product:read', 'product:write'])]
-    private ?float $discountPercent = null;
-
-    #[ORM\Column(name: 'discount_price', type: 'float', nullable: true)]
-    #[Groups(['product:read', 'product:write'])]
-    private ?float $discountPrice = null;
 
     #[ORM\ManyToOne(targetEntity: MediaItem::class, cascade: ['persist'], inversedBy: 'products')]
     #[ORM\JoinColumn(nullable: true)]
@@ -383,16 +372,17 @@ class Product
         return $this;
     }
 
-    public function isReadyForShop(): bool
+    public function getProductType(): ?string
     {
-        return $this->readyForShop;
+        return $this->productType;
     }
 
-    public function setReadyForShop(bool $readyForShop): static
+    public function setProductType(?string $productType): static
     {
-        $this->readyForShop = $readyForShop;
+        $this->productType = $productType;
         return $this;
     }
+
 
     public function getQty(): ?int
     {
@@ -460,16 +450,6 @@ class Product
         return $this;
     }
 
-    public function getRetailPrice(): ?float
-    {
-        return $this->retailPrice;
-    }
-
-    public function setRetailPrice(?float $retailPrice): static
-    {
-        $this->retailPrice = $retailPrice;
-        return $this;
-    }
 
     public function getTaxTypeId(): ?int
     {
@@ -493,27 +473,6 @@ class Product
         return $this;
     }
 
-    public function getDiscountPercent(): ?float
-    {
-        return $this->discountPercent;
-    }
-
-    public function setDiscountPercent(?float $discountPercent): static
-    {
-        $this->discountPercent = $discountPercent;
-        return $this;
-    }
-
-    public function getDiscountPrice(): ?float
-    {
-        return $this->discountPrice;
-    }
-
-    public function setDiscountPrice(?float $discountPrice): static
-    {
-        $this->discountPrice = $discountPrice;
-        return $this;
-    }
 
     public function getCreatedAt(): ?\DateTimeInterface
     {

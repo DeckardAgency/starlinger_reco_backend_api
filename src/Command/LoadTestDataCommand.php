@@ -192,10 +192,8 @@ class LoadTestDataCommand extends Command
             $country = new Country();
             $country->setName($data['name']);
             $country->setCode($data['code']);
-            $country->setIso31661Alpha3Code($data['alpha3']);
             $country->setEuropeanUnion($data['eu']);
             $country->setDhlZone($data['dhlZone']);
-            $country->setDefaultTaxPercent($data['eu'] ? '20.00' : '0.00');
             $country->setTaxType($data['eu'] ? $taxTypes['VAT20'] : $taxTypes['EXPORT']);
             $country->setIsActive(true);
             $this->entityManager->persist($country);

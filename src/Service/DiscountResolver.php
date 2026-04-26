@@ -24,19 +24,11 @@ class DiscountResolver
     ) {}
 
     /**
-     * Resolve the best applicable discount for a product + client combination.
-     * Campaign discounts take priority over product-level discounts.
+     * Resolve the best applicable campaign discount for a product + client combination.
      */
     public function resolveDiscount(Product $product, ?Client $client): ?ResolvedDiscount
     {
-        // 1. Check campaign discounts (highest priority)
-        $campaignDiscount = $this->findCampaignDiscount($product, $client);
-        if ($campaignDiscount !== null) {
-            return $campaignDiscount;
-        }
-
-        // 2. Fall back to product-level discount
-        return $this->findProductDiscount($product);
+        return $this->findCampaignDiscount($product, $client);
     }
 
     private function findCampaignDiscount(Product $product, ?Client $client): ?ResolvedDiscount
@@ -50,7 +42,7 @@ class DiscountResolver
         }
 
         // 2. Check client-wide campaign discounts (no products linked = applies to all products)
-        return $this->findClientWideCampaign($client, $now);
+        return $this->findClientWideCampaign($product, $client, $now);
     }
 
     private function findProductSpecificCampaign(Product $product, ?Client $client, \DateTime $now): ?ResolvedDiscount
@@ -82,6 +74,10 @@ class DiscountResolver
 
         foreach ($discounts as $discountId => $discount) {
             if (!$this->isDiscountApplicableToClient($discount, $client)) {
+                continue;
+            }
+
+            if (!$this->discountMatchesProductType($discount, $product)) {
                 continue;
             }
 
@@ -124,7 +120,7 @@ class DiscountResolver
      * Find discounts that target this client (or their account group) but have NO products linked.
      * These apply to ALL products for that client.
      */
-    private function findClientWideCampaign(?Client $client, \DateTime $now): ?ResolvedDiscount
+    private function findClientWideCampaign(Product $product, ?Client $client, \DateTime $now): ?ResolvedDiscount
     {
         if ($client === null) {
             return null;
@@ -162,6 +158,10 @@ class DiscountResolver
                 continue;
             }
 
+            if (!$this->discountMatchesProductType($discount, $product)) {
+                continue;
+            }
+
             $percent = $discount->getDiscountPercent();
             if ($percent !== null && (float) $percent > 0) {
                 return new ResolvedDiscount((float) $percent, null, 'campaign');
@@ -169,6 +169,25 @@ class DiscountResolver
         }
 
         return null;
+    }
+
+    /**
+     * If the discount has productTypes set, the product's productType must be in that list.
+     * Empty/null productTypes means no restriction (applies to all product types).
+     */
+    private function discountMatchesProductType(Discount $discount, Product $product): bool
+    {
+        $allowed = $discount->getProductTypes();
+        if (empty($allowed)) {
+            return true;
+        }
+
+        $type = $product->getProductType();
+        if ($type === null) {
+            return false;
+        }
+
+        return in_array($type, $allowed, true);
     }
 
     private function isDiscountApplicableToClient(Discount $discount, ?Client $client): bool
@@ -205,25 +224,4 @@ class DiscountResolver
         return false;
     }
 
-    private function findProductDiscount(Product $product): ?ResolvedDiscount
-    {
-        $discountPercent = $product->getDiscountPercent();
-        $discountPrice = $product->getDiscountPrice();
-
-        if ($discountPrice !== null && $discountPrice > 0) {
-            // Fixed discounted price — calculate percent from base price
-            $basePrice = $product->getPrice();
-            $percent = 0.0;
-            if ($basePrice > 0 && $discountPrice < $basePrice) {
-                $percent = (($basePrice - $discountPrice) / $basePrice) * 100;
-            }
-            return new ResolvedDiscount(round($percent, 2), $discountPrice, 'product');
-        }
-
-        if ($discountPercent !== null && $discountPercent > 0) {
-            return new ResolvedDiscount($discountPercent, null, 'product');
-        }
-
-        return null;
-    }
 }

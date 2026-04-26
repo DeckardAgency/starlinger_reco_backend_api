@@ -242,6 +242,23 @@ final class OrderPriceProcessor implements ProcessorInterface
                 $item->setOrderRef($order);
             }
 
+            // Round quantity up to match product's qtyStep when set
+            $qtyStep = $product->getQtyStep();
+            if ($qtyStep !== null && $qtyStep > 1) {
+                $currentQty = $item->getQuantity();
+                $remainder = $currentQty % $qtyStep;
+                if ($remainder !== 0) {
+                    $adjustedQty = $currentQty + ($qtyStep - $remainder);
+                    $item->setQuantity($adjustedQty);
+                    $this->logger->info('Rounded order item quantity up to match qtyStep', [
+                        'product' => $product->getPartNo(),
+                        'original' => $currentQty,
+                        'adjusted' => $adjustedQty,
+                        'step' => $qtyStep,
+                    ]);
+                }
+            }
+
             // Get the appropriate price
             $price = $product->getPrice(); // Default price
             $isCustomPrice = false;
@@ -264,7 +281,7 @@ final class OrderPriceProcessor implements ProcessorInterface
                 }
             }
 
-            // Apply discount (campaign or product-level) on top of resolved price
+            // Apply campaign discount on top of resolved price
             $resolved = $this->discountResolver->resolveDiscount($product, $client);
             if ($resolved !== null) {
                 if ($resolved->fixedPrice !== null) {
@@ -294,18 +311,42 @@ final class OrderPriceProcessor implements ProcessorInterface
             $item->setQuantity($item->getQuantity()); // This triggers subtotal recalculation
         }
 
-        // Determine fallback tax rate from shipping address country
+        // Determine fallback tax rate from shipping address country.
+        // Prefer the explicitly selected shipping address (order.shippingAddressId);
+        // fall back to the client's first active delivery address for legacy/empty cases.
         $countryTaxPercent = 0;
-        if ($client) {
+        $resolvedAddress = null;
+
+        if ($order->getShippingAddressId() !== null) {
+            $candidate = $this->entityManager->find(\App\Entity\Address::class, $order->getShippingAddressId());
+            // Only accept the address if it belongs to the order's client (security)
+            if ($candidate && $client && $candidate->getClient()?->getId() === $client->getId()) {
+                $resolvedAddress = $candidate;
+                // Keep the order's shippingAddress text in sync with the resolved address
+                $order->setShippingAddress($candidate->getFullAddress());
+            } else {
+                $this->logger->warning('Shipping address does not belong to client; ignoring', [
+                    'order_id' => $order->getId(),
+                    'shipping_address_id' => $order->getShippingAddressId(),
+                    'client_id' => $client?->getId(),
+                ]);
+                $order->setShippingAddressId(null);
+            }
+        }
+
+        if ($resolvedAddress === null && $client) {
             foreach ($client->getAddresses() as $address) {
                 if ($address->getIsDelivery() && $address->getIsActive() && $address->getCountry()) {
-                    $country = $address->getCountry();
-                    $resolved = $country->getTaxType()?->getPercent() ?? $country->getDefaultTaxPercent();
-                    if ($resolved !== null) {
-                        $countryTaxPercent = (float) $resolved;
-                    }
+                    $resolvedAddress = $address;
                     break;
                 }
+            }
+        }
+
+        if ($resolvedAddress !== null && $resolvedAddress->getCountry()) {
+            $countryTax = $resolvedAddress->getCountry()->getTaxType()?->getPercent();
+            if ($countryTax !== null) {
+                $countryTaxPercent = (float) $countryTax;
             }
         }
 

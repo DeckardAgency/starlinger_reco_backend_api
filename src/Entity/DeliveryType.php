@@ -53,7 +53,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'name' => 'partial',
     'remoteCode' => 'exact'
 ])]
-#[ApiFilter(BooleanFilter::class, properties: ['isActive', 'isDelivery', 'allowRecurringPayment'])]
+#[ApiFilter(BooleanFilter::class, properties: ['isActive', 'allowRecurringPayment'])]
 #[ApiFilter(OrderFilter::class, properties: ['name', 'isActive'])]
 #[ORM\Entity(repositoryClass: DeliveryTypeRepository::class)]
 #[ORM\Table]
@@ -85,11 +85,6 @@ class DeliveryType
     #[ORM\Column(length: 50, nullable: true)]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
     private ?string $color = null;
-
-    #[ORM\Column(type: 'boolean', options: ['default' => true])]
-    #[Groups(['delivery_type:read', 'delivery_type:write'])]
-    #[SerializedName('isDelivery')]
-    private bool $isDelivery = true;
 
     #[ORM\Column(type: 'decimal', precision: 10, scale: 2, nullable: true)]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
@@ -123,11 +118,6 @@ class DeliveryType
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
     #[SerializedName('isActive')]
     private bool $isActive = true;
-
-    #[ORM\Column(type: 'boolean', options: ['default' => false])]
-    #[Groups(['delivery_type:read', 'delivery_type:write'])]
-    #[SerializedName('readyForShop')]
-    private bool $readyForShop = false;
 
     #[ORM\Column(type: 'integer', options: ['default' => 0])]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
@@ -226,17 +216,6 @@ class DeliveryType
         return $this;
     }
 
-    public function getIsDelivery(): bool
-    {
-        return $this->isDelivery;
-    }
-
-    public function setIsDelivery(bool $isDelivery): static
-    {
-        $this->isDelivery = $isDelivery;
-        return $this;
-    }
-
     public function getMaxWeight(): ?string
     {
         return $this->maxWeight;
@@ -314,16 +293,6 @@ class DeliveryType
         return $this;
     }
 
-    public function getReadyForShop(): bool
-    {
-        return $this->readyForShop;
-    }
-
-    public function setReadyForShop(bool $readyForShop): static
-    {
-        $this->readyForShop = $readyForShop;
-        return $this;
-    }
 
     public function getSortOrder(): int
     {

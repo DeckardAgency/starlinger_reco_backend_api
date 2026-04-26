@@ -49,7 +49,6 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(SearchFilter::class, properties: [
     'name' => 'partial',
     'code' => 'exact',
-    'iso31661Alpha3Code' => 'exact'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['europeanUnion', 'isActive'])]
 #[ApiFilter(OrderFilter::class, properties: ['name', 'code'])]
@@ -75,25 +74,17 @@ class Country
     #[Groups(['country:read', 'country:write', 'delivery_price:read', 'client:read', 'address:read'])]
     private ?string $code = null;
 
-    #[ORM\Column(length: 3, nullable: true)]
-    #[Assert\Length(exactly: 3)]
-    #[Groups(['country:read', 'country:write'])]
-    private ?string $iso31661Alpha3Code = null;
-
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     #[Groups(['country:read', 'country:write'])]
     private bool $europeanUnion = false;
-
-    #[ORM\Column(type: 'decimal', precision: 5, scale: 2, nullable: true)]
-    #[Groups(['country:read', 'country:write', 'address:read'])]
-    private ?string $defaultTaxPercent = null;
 
     #[ORM\Column(type: 'integer', nullable: true)]
     #[Groups(['country:read', 'country:write'])]
     private ?int $dhlZone = null;
 
     #[ORM\ManyToOne(targetEntity: TaxType::class)]
-    #[ORM\JoinColumn(nullable: true)]
+    #[ORM\JoinColumn(nullable: false)]
+    #[Assert\NotNull(message: 'A country must have a tax type assigned.')]
     #[Groups(['country:read', 'country:write', 'address:read'])]
     private ?TaxType $taxType = null;
 
@@ -145,17 +136,6 @@ class Country
         return $this;
     }
 
-    public function getIso31661Alpha3Code(): ?string
-    {
-        return $this->iso31661Alpha3Code;
-    }
-
-    public function setIso31661Alpha3Code(?string $iso31661Alpha3Code): static
-    {
-        $this->iso31661Alpha3Code = $iso31661Alpha3Code ? strtoupper($iso31661Alpha3Code) : null;
-        return $this;
-    }
-
     public function isEuropeanUnion(): bool
     {
         return $this->europeanUnion;
@@ -164,17 +144,6 @@ class Country
     public function setEuropeanUnion(bool $europeanUnion): static
     {
         $this->europeanUnion = $europeanUnion;
-        return $this;
-    }
-
-    public function getDefaultTaxPercent(): ?string
-    {
-        return $this->defaultTaxPercent;
-    }
-
-    public function setDefaultTaxPercent(?string $defaultTaxPercent): static
-    {
-        $this->defaultTaxPercent = $defaultTaxPercent;
         return $this;
     }
 

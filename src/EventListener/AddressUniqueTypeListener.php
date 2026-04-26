@@ -10,9 +10,10 @@ use Doctrine\ORM\Event\PostUpdateEventArgs;
 use Doctrine\ORM\Events;
 
 /**
- * Ensures only one active billing address and one active delivery address per client.
- * When an address is saved with isBilling=true or isDelivery=true, any other address
- * for the same client with that flag is automatically unset.
+ * Ensures only one active billing address per client.
+ * When an address is saved with isBilling=true, any other address for the same client
+ * with isBilling=true is automatically unset. Multiple delivery addresses are allowed
+ * (the customer chooses one at checkout).
  */
 #[AsEntityListener(event: Events::postPersist, entity: Address::class)]
 #[AsEntityListener(event: Events::postUpdate, entity: Address::class)]
@@ -54,19 +55,5 @@ class AddressUniqueTypeListener
                 ->execute();
         }
 
-        if ($address->getIsDelivery()) {
-            $this->em->createQueryBuilder()
-                ->update(Address::class, 'a')
-                ->set('a.isDelivery', ':false')
-                ->where('a.client = :client')
-                ->andWhere('a.id != :id')
-                ->andWhere('a.isDelivery = :true')
-                ->setParameter('false', false)
-                ->setParameter('client', $client)
-                ->setParameter('id', $address->getId())
-                ->setParameter('true', true)
-                ->getQuery()
-                ->execute();
-        }
     }
 }

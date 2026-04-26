@@ -62,7 +62,7 @@ class DeliveryCostController extends AbstractController
         }
         if (!$deliveryType) {
             // Fallback: first active delivery type
-            $activeTypes = $this->deliveryTypeRepository->findDeliveryOnly();
+            $activeTypes = $this->deliveryTypeRepository->findActive();
             $deliveryType = $activeTypes[0] ?? null;
         }
 
