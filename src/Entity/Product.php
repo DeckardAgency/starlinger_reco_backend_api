@@ -173,10 +173,6 @@ class Product
     #[Groups(['product:read', 'product:write'])]
     private ?string $catalogCode = null;
 
-    #[ORM\Column(name: 'tax_type_id', type: 'integer', nullable: true)]
-    #[Groups(['product:read', 'product:write'])]
-    private ?int $taxTypeId = null;
-
     #[ORM\Column(length: 10, nullable: true, options: ['default' => 'EUR'])]
     #[Groups(['product:read', 'product:write'])]
     private ?string $currency = 'EUR';
@@ -450,17 +446,6 @@ class Product
         return $this;
     }
 
-
-    public function getTaxTypeId(): ?int
-    {
-        return $this->taxTypeId;
-    }
-
-    public function setTaxTypeId(?int $taxTypeId): static
-    {
-        $this->taxTypeId = $taxTypeId;
-        return $this;
-    }
 
     public function getCurrency(): ?string
     {

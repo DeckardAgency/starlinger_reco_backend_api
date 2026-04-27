@@ -1173,7 +1173,6 @@ class ImportProductionDataCommand extends Command
                     'fixed_qty' => isset($row['fixed_qty']) ? (int) (float) $row['fixed_qty'] : null,
                     'product_group_id' => isset($row['product_groups_id']) && $row['product_groups_id'] ? (int) $row['product_groups_id'] : null,
                     'catalog_code' => $row['catalog_code'] ?? null,
-                    'tax_type_id' => isset($row['tax_type_id']) && $row['tax_type_id'] ? (int) $row['tax_type_id'] : null,
                     'currency' => $currencyCode,
                     'featured_image_id' => null,
                     'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),

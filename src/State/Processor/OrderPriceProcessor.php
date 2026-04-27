@@ -9,7 +9,6 @@ use App\Entity\OrderItem;
 use App\Entity\User;
 use App\Message\OrderCreatedMessage;
 use App\Message\OrderStatusChangedMessage;
-use App\Entity\TaxType;
 use App\Service\DiscountResolver;
 use App\Service\PriceCalculator;
 use Doctrine\ORM\EntityManagerInterface;
@@ -350,19 +349,9 @@ final class OrderPriceProcessor implements ProcessorInterface
             }
         }
 
-        // Apply tax rate per item: product tax type takes priority over country
+        // Apply the same country-derived tax rate to all items
         foreach ($order->getItems() as $item) {
-            $product = $item->getProduct();
-            $itemTaxPercent = $countryTaxPercent;
-
-            if ($product && $product->getTaxTypeId() !== null) {
-                $taxType = $this->entityManager->find(TaxType::class, $product->getTaxTypeId());
-                if ($taxType !== null) {
-                    $itemTaxPercent = (float) $taxType->getPercent();
-                }
-            }
-
-            $item->setTaxPercent($itemTaxPercent);
+            $item->setTaxPercent($countryTaxPercent);
         }
     }
 
