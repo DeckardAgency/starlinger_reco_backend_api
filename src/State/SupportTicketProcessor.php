@@ -27,7 +27,7 @@ class SupportTicketProcessor implements ProcessorInterface
         private SluggerInterface $slugger,
         #[Autowire('%kernel.project_dir%/public/uploads')]
         private string $uploadDirectory,
-        #[Autowire('%env(ADMIN_EMAIL)%')]
+        #[Autowire('%env(ORDER_ADMIN_EMAIL)%')]
         private string $adminEmail
     ) {
     }
