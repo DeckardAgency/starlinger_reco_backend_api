@@ -24,6 +24,16 @@ class DiscountResolver
     ) {}
 
     /**
+     * Request-scoped caches. resolveDiscount() is invoked once per product while
+     * serializing a product collection (see ProductDiscountNormalizer), so the
+     * active-discount list and the set of discount ids that have product links
+     * are identical for every product in a single response. Resolving them once
+     * turns the shop listing from O(products × discounts) queries into O(1).
+     */
+    private ?array $activeDiscounts = null;
+    private ?array $linkedDiscountIds = null;
+
+    /**
      * Resolve the best applicable campaign discount for a product + client combination.
      */
     public function resolveDiscount(Product $product, ?Client $client): ?ResolvedDiscount
@@ -126,30 +136,13 @@ class DiscountResolver
             return null;
         }
 
-        // Get all active discounts within date range
-        $qb = $this->entityManager->createQueryBuilder();
-        $qb->select('d')
-            ->from(Discount::class, 'd')
-            ->where('d.isActive = true')
-            ->andWhere('(d.dateValidFrom IS NULL OR d.dateValidFrom <= :now)')
-            ->andWhere('(d.dateValidTo IS NULL OR d.dateValidTo >= :now)')
-            ->setParameter('now', $now)
-            ->orderBy('d.priority', 'DESC')
-            ->addOrderBy('d.id', 'ASC');
-
-        $discounts = $qb->getQuery()->getResult();
+        // Get all active discounts within date range (cached per request)
+        $discounts = $this->getActiveDiscounts($now);
+        $linkedDiscountIds = $this->getLinkedDiscountIds();
 
         foreach ($discounts as $discount) {
             // Skip discounts that have products linked (those are product-specific)
-            $productCount = $this->entityManager->createQueryBuilder()
-                ->select('COUNT(pd.id)')
-                ->from(ProductDiscount::class, 'pd')
-                ->where('pd.discountId = :discountId')
-                ->setParameter('discountId', $discount->getId())
-                ->getQuery()
-                ->getSingleScalarResult();
-
-            if ((int) $productCount > 0) {
+            if (isset($linkedDiscountIds[$discount->getId()])) {
                 continue;
             }
 
@@ -169,6 +162,56 @@ class DiscountResolver
         }
 
         return null;
+    }
+
+    /**
+     * Active, in-date discounts. Cached for the lifetime of the request so a
+     * product collection doesn't re-run this query for every product.
+     *
+     * @return Discount[]
+     */
+    private function getActiveDiscounts(\DateTime $now): array
+    {
+        if ($this->activeDiscounts === null) {
+            $this->activeDiscounts = $this->entityManager->createQueryBuilder()
+                ->select('d')
+                ->from(Discount::class, 'd')
+                ->where('d.isActive = true')
+                ->andWhere('(d.dateValidFrom IS NULL OR d.dateValidFrom <= :now)')
+                ->andWhere('(d.dateValidTo IS NULL OR d.dateValidTo >= :now)')
+                ->setParameter('now', $now)
+                ->orderBy('d.priority', 'DESC')
+                ->addOrderBy('d.id', 'ASC')
+                ->getQuery()
+                ->getResult();
+        }
+
+        return $this->activeDiscounts;
+    }
+
+    /**
+     * Set of discount ids that have at least one ProductDiscount link, fetched in
+     * a single query. Replaces a per-discount COUNT query inside the resolve loop.
+     * Returned as a map (id => true) for O(1) membership checks.
+     *
+     * @return array<int, true>
+     */
+    private function getLinkedDiscountIds(): array
+    {
+        if ($this->linkedDiscountIds === null) {
+            $rows = $this->entityManager->createQueryBuilder()
+                ->select('DISTINCT pd.discountId')
+                ->from(ProductDiscount::class, 'pd')
+                ->getQuery()
+                ->getScalarResult();
+
+            $this->linkedDiscountIds = [];
+            foreach ($rows as $row) {
+                $this->linkedDiscountIds[(int) $row['discountId']] = true;
+            }
+        }
+
+        return $this->linkedDiscountIds;
     }
 
     /**
