@@ -475,8 +475,15 @@ final class OrderPriceProcessor implements ProcessorInterface
             throw new BadRequestHttpException('Tracking number is required when dispatching an order.');
         }
 
+        // Auto-fill carrier from delivery type if not explicitly set
+        if (empty($order->getTrackingCarrier()) && $order->getDeliveryType()?->getCarrierCode()) {
+            $order->setTrackingCarrier($order->getDeliveryType()->getCarrierCode());
+        }
+
         if (empty($order->getTrackingCarrier())) {
-            throw new BadRequestHttpException('Tracking carrier is required when dispatching an order.');
+            throw new BadRequestHttpException(
+                'Tracking carrier is required when dispatching an order. Set it on the delivery type or pass trackingCarrier explicitly.'
+            );
         }
 
         // Validate carrier is one of the allowed values

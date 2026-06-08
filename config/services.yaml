@@ -2,6 +2,8 @@ parameters:
     media_directory: '%kernel.project_dir%/public/uploads'
     app.client_url: '%env(CLIENT_APP_URL)%'
     app.invitation_expiration_days: 7
+    app.dhl_api_key: '%env(string:default::DHL_API_KEY)%'
+    app.dhl_api_base_url: '%env(string:default::DHL_API_BASE_URL)%'
 
 services:
     _defaults:
@@ -130,6 +132,16 @@ services:
     App\Command\ImportProductImagesCommand:
         arguments:
             $mediaDirectory: '%media_directory%'
+
+    # Carrier integration — DHL Track and Trace API
+    App\Service\Carrier\DhlClient:
+        arguments:
+            $apiKey: '%app.dhl_api_key%'
+            $baseUrl: '%app.dhl_api_base_url%'
+
+    App\MessageHandler\OrderTrackingChangedMessageHandler:
+        arguments:
+            $senderEmail: '%env(default::ORDER_SENDER_EMAIL)%'
 
     # Password Reset Service
     App\Service\PasswordResetService:

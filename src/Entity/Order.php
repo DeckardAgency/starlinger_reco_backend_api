@@ -91,16 +91,19 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
             name: 'order_export_pdf'
         ),
         new Post(
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
             normalizationContext: ['groups' => ['order:read']],
             denormalizationContext: ['groups' => ['order:write']],
             processor: 'App\State\Processor\OrderPriceProcessor'
         ),
         new Put(
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
             normalizationContext: ['groups' => ['order:read']],
             denormalizationContext: ['groups' => ['order:write']],
             processor: 'App\State\Processor\OrderPriceProcessor'
         ),
         new Patch(
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
             normalizationContext: ['groups' => ['order:read']],
             denormalizationContext: ['groups' => ['order:write']],
             processor: 'App\State\Processor\OrderPriceProcessor'
@@ -125,6 +128,7 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
                 summary: 'Saves an order as draft',
                 description: 'Saves or updates the order as a draft'
             ),
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
             denormalizationContext: ['groups' => ['order:write']],
             read: false,
             processor: OrderDraftProcessor::class
@@ -135,6 +139,7 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
                 summary: 'Submits an order from draft',
                 description: 'Converts a draft order to a pending order'
             ),
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
             denormalizationContext: ['groups' => ['order:write']],
             read: false,
             processor: OrderDraftProcessor::class
@@ -280,6 +285,14 @@ class Order
     #[Groups(['order:read'])]
     private Collection $infoRequests;
 
+    /**
+     * @var Collection<int, TrackingEvent>
+     */
+    #[ORM\OneToMany(targetEntity: TrackingEvent::class, mappedBy: 'orderRef', cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[ORM\OrderBy(['occurredAt' => 'DESC'])]
+    #[Groups(['order:read'])]
+    private Collection $trackingEvents;
+
     // Cancellation fields (for canceled status)
     #[ORM\Column(type: "text", nullable: true)]
     #[Groups(['order:read', 'order:write'])]
@@ -317,6 +330,7 @@ class Order
         $this->lastSavedAt = new \DateTime();
         $this->logs = new ArrayCollection();
         $this->infoRequests = new ArrayCollection();
+        $this->trackingEvents = new ArrayCollection();
     }
 
     private function generateOrderNumber(): string
@@ -749,6 +763,29 @@ class Order
     public function getInfoRequests(): Collection
     {
         return $this->infoRequests;
+    }
+
+    /**
+     * @return Collection<int, TrackingEvent>
+     */
+    public function getTrackingEvents(): Collection
+    {
+        return $this->trackingEvents;
+    }
+
+    public function addTrackingEvent(TrackingEvent $event): static
+    {
+        if (!$this->trackingEvents->contains($event)) {
+            $this->trackingEvents->add($event);
+            $event->setOrderRef($this);
+        }
+        return $this;
+    }
+
+    public function removeTrackingEvent(TrackingEvent $event): static
+    {
+        $this->trackingEvents->removeElement($event);
+        return $this;
     }
 
     public function addInfoRequest(OrderInfoRequest $infoRequest): static

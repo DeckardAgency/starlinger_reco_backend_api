@@ -78,6 +78,11 @@ class DeliveryType
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
     private ?string $remoteCode = null;
 
+    #[ORM\Column(name: 'carrier_code', length: 20, nullable: true)]
+    #[Assert\Choice(choices: ['DHL', 'DPD', 'GLS', 'UPS', 'OTHER'], message: 'Carrier must be one of DHL, DPD, GLS, UPS, OTHER.')]
+    #[Groups(['delivery_type:read', 'delivery_type:write', 'order:read'])]
+    private ?string $carrierCode = null;
+
     #[ORM\Column(length: 50, nullable: true)]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
     private ?string $remoteId = null;
@@ -191,6 +196,17 @@ class DeliveryType
     public function setRemoteCode(?string $remoteCode): static
     {
         $this->remoteCode = $remoteCode;
+        return $this;
+    }
+
+    public function getCarrierCode(): ?string
+    {
+        return $this->carrierCode;
+    }
+
+    public function setCarrierCode(?string $carrierCode): static
+    {
+        $this->carrierCode = $carrierCode;
         return $this;
     }
 
