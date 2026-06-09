@@ -5,6 +5,9 @@ namespace App\State\Processor;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
 use App\Entity\User;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 /**
@@ -14,7 +17,9 @@ final  class UserPasswordHasher implements ProcessorInterface
 {
     public function __construct(
         private readonly ProcessorInterface $processor,
-        private readonly UserPasswordHasherInterface $passwordHasher
+        private readonly UserPasswordHasherInterface $passwordHasher,
+        private readonly Security $security,
+        private readonly EntityManagerInterface $entityManager
     )
     {
     }
@@ -24,6 +29,8 @@ final  class UserPasswordHasher implements ProcessorInterface
      */
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): User
     {
+        $this->enforceRolePolicy($data);
+
         if (!$data->getPlainPassword()) {
             return $this->processor->process($data, $operation, $uriVariables, $context);
         }
@@ -36,5 +43,29 @@ final  class UserPasswordHasher implements ProcessorInterface
         $data->eraseCredentials();
 
         return $this->processor->process($data, $operation, $uriVariables, $context);
+    }
+
+    /**
+     * Prevent privilege escalation through the writable `roles` field:
+     *  - only full admins may grant ROLE_ADMIN;
+     *  - users who are neither admin nor client-admin (e.g. a customer editing
+     *    their own profile) cannot change their roles at all.
+     */
+    private function enforceRolePolicy(User $data): void
+    {
+        $isAdmin = $this->security->isGranted('ROLE_ADMIN');
+        $isClientAdmin = $this->security->isGranted('ROLE_CLIENT_ADMIN');
+
+        if (!$isAdmin && in_array('ROLE_ADMIN', $data->getRoles(), true)) {
+            throw new AccessDeniedHttpException('You are not allowed to assign the administrator role.');
+        }
+
+        if (!$isAdmin && !$isClientAdmin) {
+            // Revert any attempted role change to the persisted value.
+            $original = $data->getId() !== null
+                ? ($this->entityManager->getUnitOfWork()->getOriginalEntityData($data)['roles'] ?? null)
+                : null;
+            $data->setRoles($original ?? []);
+        }
     }
 }

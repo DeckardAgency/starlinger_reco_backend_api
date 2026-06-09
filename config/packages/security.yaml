@@ -54,5 +54,15 @@ security:
         - { path: ^/api/auth/forgot-password, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/validate-reset-token, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/reset-password, roles: PUBLIC_ACCESS }
+        # Master-data & pricing writes are admin-only. Reads stay open to any
+        # authenticated user (the shop/admin apps need them). Order/User/Address/
+        # SupportTicket carry their own per-resource security with ownership rules.
+        - { path: '^/api/(v1/)?(account_groups|client_product_prices|client|clients|countries|delivery_prices|delivery_types|discounts|documentations|documentation_revisions|documentation_media|fuel_surcharges|import_manual_statuses|import_manual_types|import_manuals|media_items|packaging_prices|payment_types|product_discounts|product_groups|product_product_links|products|tax_types|warehouses)(/|$)', methods: [POST, PUT, PATCH, DELETE], roles: ROLE_ADMIN }
+        # Customer-writable resources: require a webshop role (notification-only
+        # finance accounts are excluded). NOTE: per-object ownership scoping
+        # (own client only) still needs voters — follow-up.
+        - { path: '^/api/(v1/)?(addresses|support_tickets|order_items)(/|$)', methods: [POST, PUT, PATCH, DELETE], roles: [ROLE_CLIENT, ROLE_CLIENT_ADMIN, ROLE_ADMIN] }
+        # Invitations are created by client admins / admins (verify & complete are public, matched above)
+        - { path: '^/api/(v1/)?user_invitations(/|$)', methods: [POST, PUT, PATCH, DELETE], roles: [ROLE_CLIENT_ADMIN, ROLE_ADMIN] }
         # All other API routes require authentication
         - { path: ^/api, roles: ROLE_USER }
