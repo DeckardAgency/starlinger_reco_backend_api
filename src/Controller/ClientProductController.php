@@ -34,6 +34,8 @@ class ClientProductController extends AbstractController
             return $this->json(['error' => 'Debug endpoint not available in production'], Response::HTTP_FORBIDDEN);
         }
 
+        $this->assertClientAccess($clientId);
+
         try {
             $client = $this->findClientOrThrow($clientId);
             $debugInfo = $this->generateDebugInfo($client);
@@ -47,6 +49,7 @@ class ClientProductController extends AbstractController
     #[Route('/client/{clientId}/products', name: 'api_client_products', methods: ['GET'])]
     public function getClientProducts(string $clientId, Request $request): JsonResponse
     {
+        $this->assertClientAccess($clientId);
         try {
             $client = $this->findClientOrThrow($clientId);
             $filters = $this->extractFilters($request);
@@ -293,6 +296,24 @@ class ClientProductController extends AbstractController
     {
         if (!$this->isGranted('ROLE_ADMIN') && !$this->isGranted('ROLE_CLIENT_MANAGER')) {
             throw new \RuntimeException('Insufficient permissions');
+        }
+    }
+
+    /**
+     * Non-admins may only access their own client's data. Prevents reading
+     * another client's products/prices by changing the {clientId} in the URL.
+     */
+    private function assertClientAccess(string $clientId): void
+    {
+        if ($this->isGranted('ROLE_ADMIN')) {
+            return;
+        }
+        $user = $this->getUser();
+        $ownClientId = ($user && method_exists($user, 'getClient') && $user->getClient())
+            ? (string) $user->getClient()->getId()
+            : null;
+        if ($ownClientId === null || $ownClientId !== (string) $clientId) {
+            throw $this->createAccessDeniedException("You cannot access another client's products.");
         }
     }
 

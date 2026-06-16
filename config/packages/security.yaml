@@ -64,5 +64,7 @@ security:
         - { path: '^/api/(v1/)?(addresses|support_tickets|order_items)(/|$)', methods: [POST, PUT, PATCH, DELETE], roles: [ROLE_CLIENT, ROLE_CLIENT_ADMIN, ROLE_ADMIN] }
         # Invitations are created by client admins / admins (verify & complete are public, matched above)
         - { path: '^/api/(v1/)?user_invitations(/|$)', methods: [POST, PUT, PATCH, DELETE], roles: [ROLE_CLIENT_ADMIN, ROLE_ADMIN] }
+        # Admin-only Excel exports of users/clients (orders export is self-scoped in its controller)
+        - { path: '^/api/(users|clients)/export', roles: ROLE_ADMIN }
         # All other API routes require authentication
         - { path: ^/api, roles: ROLE_USER }
