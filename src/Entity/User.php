@@ -29,7 +29,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 #[ApiResource(
     operations: [
-        new GetCollection(security: "is_granted('ROLE_ADMIN') or is_granted('ROLE_CLIENT_ADMIN')"),
+        // Clients and agents need to look up their own user record at login
+        // (getUserByEmail). The ClientOwnershipExtension scopes the collection to
+        // the caller's own client, so they only ever see their own company's users.
+        new GetCollection(security: "is_granted('ROLE_ADMIN') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_CLIENT') or is_granted('ROLE_USER_CLIENT_AGENT')"),
         new Post(
             security: "is_granted('ROLE_ADMIN') or is_granted('ROLE_CLIENT_ADMIN')",
             validationContext: ['groups' => ['Default', 'user:create']],

@@ -68,6 +68,17 @@ class OrderItem
     #[ApiProperty(readableLink: true, writableLink: false)]
     private ?Product $product = null;
 
+    /**
+     * The client this line is ordered on behalf of, when an agent places a
+     * mixed-client order. Null for ordinary lines. Validated/stripped in
+     * OrderPriceProcessor via ClientAgentAuthorization. Writable via the parent
+     * order:write group (nested writes) as well as its own.
+     */
+    #[ORM\ManyToOne(targetEntity: Client::class)]
+    #[ORM\JoinColumn(nullable: true)]
+    #[Groups(['order_item:read', 'order_item:write', 'order:read', 'order:write'])]
+    private ?Client $onBehalfOfClient = null;
+
     #[ORM\Column(type: "integer")]
     #[Groups(['order_item:read', 'order_item:write', 'order:read', 'order:write'])]
     private int $quantity = 1;
@@ -315,6 +326,17 @@ class OrderItem
                 $infoRequest->setOrderItem(null);
             }
         }
+        return $this;
+    }
+
+    public function getOnBehalfOfClient(): ?Client
+    {
+        return $this->onBehalfOfClient;
+    }
+
+    public function setOnBehalfOfClient(?Client $onBehalfOfClient): static
+    {
+        $this->onBehalfOfClient = $onBehalfOfClient;
         return $this;
     }
 }

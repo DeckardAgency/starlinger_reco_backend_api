@@ -58,7 +58,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'email' => 'partial',
     'accountGroup.id' => 'exact'
 ])]
-#[ApiFilter(BooleanFilter::class, properties: ['isArchived', 'isActive'])]
+#[ApiFilter(BooleanFilter::class, properties: ['isArchived', 'isActive', 'isClientAgent'])]
 #[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'code', 'vatNumber', 'email', 'isActive', 'purchaseLimit', 'amountSpent'])]
 #[ApiFilter(ClientSearchFilter::class)]
 #[ORM\Entity(repositoryClass: ClientRepository::class)]
@@ -185,11 +185,40 @@ class Client
     #[ApiProperty(readableLink: true, writableLink: true)]
     private Collection $addresses;
 
+    /**
+     * Whether this client acts as an agent that can place orders on behalf of other clients
+     */
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    #[Groups(['client:read', 'client:write', 'user:read'])]
+    private bool $isClientAgent = false;
+
+    /**
+     * Clients managed by this agent company (only relevant when isClientAgent = true)
+     * @var Collection<int, Client>
+     */
+    #[ORM\ManyToMany(targetEntity: Client::class, inversedBy: 'managedByAgents')]
+    #[ORM\JoinTable(name: 'client_agent_managed_clients',
+        joinColumns: [new ORM\JoinColumn(name: 'agent_client_id', referencedColumnName: 'id')],
+        inverseJoinColumns: [new ORM\JoinColumn(name: 'managed_client_id', referencedColumnName: 'id')]
+    )]
+    #[Groups(['client:read:details', 'client:write'])]
+    #[ApiProperty(readableLink: false, writableLink: false)]
+    private Collection $managedClients;
+
+    /**
+     * Agent companies that manage this client (inverse side)
+     * @var Collection<int, Client>
+     */
+    #[ORM\ManyToMany(targetEntity: Client::class, mappedBy: 'managedClients')]
+    private Collection $managedByAgents;
+
     public function __construct()
     {
         $this->users = new ArrayCollection();
         $this->productPrices = new ArrayCollection();
         $this->addresses = new ArrayCollection();
+        $this->managedClients = new ArrayCollection();
+        $this->managedByAgents = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -534,5 +563,57 @@ class Client
             }
         }
         return $this;
+    }
+
+    public function getIsClientAgent(): bool
+    {
+        return $this->isClientAgent;
+    }
+
+    public function setIsClientAgent(bool $isClientAgent): static
+    {
+        $this->isClientAgent = $isClientAgent;
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Client>
+     */
+    public function getManagedClients(): Collection
+    {
+        return $this->managedClients;
+    }
+
+    public function addManagedClient(Client $client): static
+    {
+        if (!$this->managedClients->contains($client)) {
+            $this->managedClients->add($client);
+        }
+        return $this;
+    }
+
+    public function removeManagedClient(Client $client): static
+    {
+        $this->managedClients->removeElement($client);
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Client>
+     */
+    public function getManagedByAgents(): Collection
+    {
+        return $this->managedByAgents;
+    }
+
+    #[Groups(['client:read'])]
+    public function getManagedClientCount(): int
+    {
+        return $this->managedClients->count();
+    }
+
+    public function managesClient(Client $client): bool
+    {
+        return $this->managedClients->contains($client);
     }
 }

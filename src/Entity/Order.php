@@ -91,19 +91,19 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
             name: 'order_export_pdf'
         ),
         new Post(
-            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN') or is_granted('ROLE_USER_CLIENT_AGENT')",
             normalizationContext: ['groups' => ['order:read']],
             denormalizationContext: ['groups' => ['order:write']],
             processor: 'App\State\Processor\OrderPriceProcessor'
         ),
         new Put(
-            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN') or is_granted('ROLE_USER_CLIENT_AGENT')",
             normalizationContext: ['groups' => ['order:read']],
             denormalizationContext: ['groups' => ['order:write']],
             processor: 'App\State\Processor\OrderPriceProcessor'
         ),
         new Patch(
-            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN') or is_granted('ROLE_USER_CLIENT_AGENT')",
             normalizationContext: ['groups' => ['order:read']],
             denormalizationContext: ['groups' => ['order:write']],
             processor: 'App\State\Processor\OrderPriceProcessor'
@@ -128,7 +128,7 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
                 summary: 'Saves an order as draft',
                 description: 'Saves or updates the order as a draft'
             ),
-            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN') or is_granted('ROLE_USER_CLIENT_AGENT')",
             denormalizationContext: ['groups' => ['order:write']],
             read: false,
             processor: OrderDraftProcessor::class
@@ -139,7 +139,7 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
                 summary: 'Submits an order from draft',
                 description: 'Converts a draft order to a pending order'
             ),
-            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN') or is_granted('ROLE_USER_CLIENT_AGENT')",
             denormalizationContext: ['groups' => ['order:write']],
             read: false,
             processor: OrderDraftProcessor::class
@@ -246,6 +246,16 @@ class Order
     #[Groups(['order:read', 'order:write'])]
     #[ApiProperty(readableLink: true, writableLink: true)]
     private ?User $user = null;
+
+    /**
+     * The client this order is placed on behalf of, when created by a client agent.
+     * Null for ordinary orders. Authorisation is enforced in OrderPriceProcessor via
+     * ClientAgentAuthorization.
+     */
+    #[ORM\ManyToOne(targetEntity: Client::class)]
+    #[ORM\JoinColumn(nullable: true)]
+    #[Groups(['order:read', 'order:write'])]
+    private ?Client $onBehalfOfClient = null;
 
     /**
      * @var Collection<int, OrderLog>
@@ -906,6 +916,17 @@ class Order
     public function setIsArchived(bool $isArchived): static
     {
         $this->isArchived = $isArchived;
+        return $this;
+    }
+
+    public function getOnBehalfOfClient(): ?Client
+    {
+        return $this->onBehalfOfClient;
+    }
+
+    public function setOnBehalfOfClient(?Client $onBehalfOfClient): static
+    {
+        $this->onBehalfOfClient = $onBehalfOfClient;
         return $this;
     }
 }

@@ -9,6 +9,7 @@ use App\Entity\OrderItem;
 use App\Entity\User;
 use App\Message\OrderCreatedMessage;
 use App\Message\OrderStatusChangedMessage;
+use App\Security\ClientAgentAuthorization;
 use App\Service\DiscountResolver;
 use App\Service\PriceCalculator;
 use Doctrine\ORM\EntityManagerInterface;
@@ -33,7 +34,8 @@ final class OrderPriceProcessor implements ProcessorInterface
         private LoggerInterface $logger,
         private Security $security,
         private MessageBusInterface $messageBus,
-        private WorkflowInterface $orderStateMachine
+        private WorkflowInterface $orderStateMachine,
+        private ClientAgentAuthorization $agentAuth
     ) {
     }
 
@@ -100,6 +102,18 @@ final class OrderPriceProcessor implements ProcessorInterface
             $user = $this->security->getUser();
             if ($user instanceof User) {
                 $data->setUser($user);
+            }
+        }
+
+        // Client-agent delegation: validate any onBehalfOfClient (order-level AND
+        // per-item) for authorised agents, otherwise strip every reference so a
+        // non-agent can never persist a delegation.
+        if ($authenticatedUser instanceof User) {
+            if ($this->agentAuth->mayActOnBehalf($authenticatedUser)) {
+                $this->agentAuth->assertCanActFor($authenticatedUser, $data->getOnBehalfOfClient());
+                $this->agentAuth->assertCanActForItems($authenticatedUser, $data->getItems());
+            } else {
+                $this->agentAuth->stripOnBehalfOf($data, $data->getItems());
             }
         }
 
@@ -225,9 +239,17 @@ final class OrderPriceProcessor implements ProcessorInterface
         $user = $order->getUser();
         $client = $user?->getClient();
 
+        // For agent on-behalf-of orders, price/tax against the managed client.
+        // Order-level applies to the whole order (and tax/shipping); each item may
+        // additionally override with its own onBehalfOfClient (mixed-client carts).
+        $orderClient = $order->getOnBehalfOfClient() ?? $client;
+
         foreach ($order->getItems() as $item) {
             /** @var OrderItem $item */
             $product = $item->getProduct();
+
+            // The client whose pricing applies to THIS line.
+            $itemClient = $item->getOnBehalfOfClient() ?? $orderClient;
 
             if (!$product) {
                 $this->logger->warning('Order item without product', [
@@ -262,16 +284,16 @@ final class OrderPriceProcessor implements ProcessorInterface
             $price = $product->getPrice(); // Default price
             $isCustomPrice = false;
 
-            if ($client) {
+            if ($itemClient) {
                 // Use PriceCalculator service to get client price
-                $clientProductPrice = $this->priceCalculator->getClientProductPrice($client, $product);
+                $clientProductPrice = $this->priceCalculator->getClientProductPrice($itemClient, $product);
 
                 if ($clientProductPrice && $clientProductPrice->isValid()) {
                     $price = $clientProductPrice->getEffectivePrice();
                     $isCustomPrice = true;
 
                     $this->logger->debug('Applying client-specific price', [
-                        'client' => $client->getCode(),
+                        'client' => $itemClient->getCode(),
                         'product' => $product->getName(),
                         'standard_price' => $product->getPrice(),
                         'client_price' => $price,
@@ -281,7 +303,7 @@ final class OrderPriceProcessor implements ProcessorInterface
             }
 
             // Apply campaign discount on top of resolved price
-            $resolved = $this->discountResolver->resolveDiscount($product, $client);
+            $resolved = $this->discountResolver->resolveDiscount($product, $itemClient);
             if ($resolved !== null) {
                 if ($resolved->fixedPrice !== null) {
                     $price = min($price, $resolved->fixedPrice);
@@ -318,8 +340,8 @@ final class OrderPriceProcessor implements ProcessorInterface
 
         if ($order->getShippingAddressId() !== null) {
             $candidate = $this->entityManager->find(\App\Entity\Address::class, $order->getShippingAddressId());
-            // Only accept the address if it belongs to the order's client (security)
-            if ($candidate && $client && $candidate->getClient()?->getId() === $client->getId()) {
+            // Only accept the address if it belongs to the order's (on-behalf) client (security)
+            if ($candidate && $orderClient && $candidate->getClient()?->getId() === $orderClient->getId()) {
                 $resolvedAddress = $candidate;
                 // Keep the order's shippingAddress text in sync with the resolved address
                 $order->setShippingAddress($candidate->getFullAddress());
@@ -327,14 +349,14 @@ final class OrderPriceProcessor implements ProcessorInterface
                 $this->logger->warning('Shipping address does not belong to client; ignoring', [
                     'order_id' => $order->getId(),
                     'shipping_address_id' => $order->getShippingAddressId(),
-                    'client_id' => $client?->getId(),
+                    'client_id' => $orderClient?->getId(),
                 ]);
                 $order->setShippingAddressId(null);
             }
         }
 
-        if ($resolvedAddress === null && $client) {
-            foreach ($client->getAddresses() as $address) {
+        if ($resolvedAddress === null && $orderClient) {
+            foreach ($orderClient->getAddresses() as $address) {
                 if ($address->getIsDelivery() && $address->getIsActive() && $address->getCountry()) {
                     $resolvedAddress = $address;
                     break;
