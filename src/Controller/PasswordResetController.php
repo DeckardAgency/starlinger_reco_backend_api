@@ -7,6 +7,7 @@ use App\Repository\PasswordResetTokenRepository;
 use App\Repository\UserRepository;
 use App\Service\PasswordResetService;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -27,7 +28,8 @@ class PasswordResetController extends AbstractController
         private readonly PasswordResetTokenRepository $passwordResetTokenRepository,
         private readonly Security $security,
         private readonly ValidatorInterface $validator,
-        private readonly EntityManagerInterface $entityManager
+        private readonly EntityManagerInterface $entityManager,
+        private readonly LoggerInterface $logger
     ) {
     }
 
@@ -68,8 +70,9 @@ class PasswordResetController extends AbstractController
                 'expiresAt' => $token->getExpiresAt()->format(\DateTimeInterface::ATOM),
             ], Response::HTTP_OK);
         } catch (\Exception $e) {
+            $this->logger->error('requestPasswordReset failed', ['exception' => $e]);
             return $this->json([
-                'error' => $e->getMessage(),
+                'error' => 'Unable to initiate a password reset for this user.',
             ], Response::HTTP_BAD_REQUEST);
         }
     }
@@ -110,10 +113,15 @@ class PasswordResetController extends AbstractController
                 'message' => 'If an account with that email exists, you will receive a password reset link shortly.',
             ], Response::HTTP_OK);
         } catch (\Exception $e) {
-            // Rate limit or other error
+            // Never surface the error: a per-user rate-limit / internal error that only
+            // fires for existing emails would otherwise re-enable enumeration. Log and
+            // return the same generic success. Abusive IPs are already blocked upstream
+            // by the sensitive_operations limiter (LoginRateLimitSubscriber).
+            $this->logger->warning('forgotPassword suppressed error', ['exception' => $e]);
             return $this->json([
-                'error' => $e->getMessage(),
-            ], Response::HTTP_TOO_MANY_REQUESTS);
+                'success' => true,
+                'message' => 'If an account with that email exists, you will receive a password reset link shortly.',
+            ], Response::HTTP_OK);
         }
     }
 
@@ -257,8 +265,11 @@ class PasswordResetController extends AbstractController
                 'message' => 'Password has been reset successfully',
             ], Response::HTTP_OK);
         } catch (\Exception $e) {
+            // Password is already validated above; the only expected failure here is a
+            // bad/expired token. Log details, return a controlled message.
+            $this->logger->warning('resetPassword failed', ['exception' => $e]);
             return $this->json([
-                'error' => $e->getMessage(),
+                'error' => 'Invalid or expired password reset token.',
             ], Response::HTTP_BAD_REQUEST);
         }
     }

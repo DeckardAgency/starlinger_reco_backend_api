@@ -54,6 +54,27 @@ class InvitationCreatedProcessor implements ProcessorInterface
             ));
         }
 
+        // Prevent privilege escalation / cross-tenant invites: a non-admin (client-admin)
+        // inviter may only invite into their OWN client and may not grant roles above their
+        // own (never ROLE_ADMIN). Admins may set roles/client freely.
+        $currentUser = $this->security->getUser();
+        if (!$this->security->isGranted('ROLE_ADMIN')) {
+            $ownClient = ($currentUser && method_exists($currentUser, 'getClient'))
+                ? $currentUser->getClient()
+                : null;
+            if ($ownClient === null) {
+                throw new BadRequestHttpException('You are not associated with a client and cannot create invitations.');
+            }
+            $data->setClient($ownClient);
+
+            $allowedRoles = ['ROLE_USER', 'ROLE_CLIENT', 'ROLE_CLIENT_ADMIN'];
+            $requestedRoles = $data->getRoles() ?: [];
+            if (array_diff($requestedRoles, $allowedRoles)) {
+                throw new BadRequestHttpException('You are not allowed to grant the requested role(s).');
+            }
+            $data->setRoles(array_values(array_intersect($requestedRoles, $allowedRoles)));
+        }
+
         // Validate client has available user slots
         $client = $data->getClient();
         if ($client && !$client->canAddActiveUser()) {

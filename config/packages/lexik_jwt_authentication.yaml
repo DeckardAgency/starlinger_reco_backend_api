@@ -9,8 +9,25 @@ lexik_jwt_authentication:
     encoder:
         service: lexik_jwt_authentication.encoder.lcobucci
 
-    # Configure your token extraction
+    # Issue the access token as an HttpOnly cookie so it is not reachable by JS
+    # (defends against XSS token theft). Because set_cookies is configured, lexik also
+    # removes the token from the JSON response body
+    # (remove_token_from_body_when_cookies_used defaults to true).
+    set_cookies:
+        BEARER:
+            lifetime: 86400
+            samesite: lax
+            path: /
+            # http locally, https in prod — driven by JWT_COOKIE_SECURE (.env)
+            secure: '%env(bool:JWT_COOKIE_SECURE)%'
+            httpOnly: true
+
+    # Read the token from the HttpOnly cookie first; keep the Authorization header
+    # extractor enabled for non-browser API clients / backward compatibility.
     token_extractors:
+        cookie:
+            enabled: true
+            name: BEARER
         authorization_header:
             enabled: true
             prefix: Bearer

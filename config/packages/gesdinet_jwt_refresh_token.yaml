@@ -3,3 +3,11 @@ gesdinet_jwt_refresh_token:
     ttl: 2592000 # 30 days
     token_parameter_name: refresh_token
     single_use: true
+    # Issue/read the refresh token as an HttpOnly cookie (not JS-readable, not in the
+    # JSON body). Scoped to the refresh endpoint so it is only sent when refreshing.
+    cookie:
+        enabled: true
+        same_site: lax
+        path: /api/token/refresh
+        secure: '%env(bool:JWT_COOKIE_SECURE)%'
+        http_only: true

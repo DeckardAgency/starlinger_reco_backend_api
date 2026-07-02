@@ -76,6 +76,10 @@ services:
         arguments:
             $processor: '@api_platform.doctrine.orm.state.persist_processor'
 
+    App\State\Processor\AddressClientProcessor:
+        arguments:
+            $processor: '@api_platform.doctrine.orm.state.persist_processor'
+
     App\State\OrderDraftProvider:
         arguments:
             $entityManager: '@doctrine.orm.entity_manager'
@@ -118,6 +122,8 @@ services:
     App\EventSubscriber\LoginRateLimitSubscriber:
         arguments:
             $loginLimiter: '@limiter.login'
+            $loginUsernameLimiter: '@limiter.login_username'
+            $sensitiveOperationsLimiter: '@limiter.sensitive_operations'
 
     # Production data investigation/migration commands
     App\Command\InvestigateProductionDataCommand:

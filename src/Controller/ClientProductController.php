@@ -13,6 +13,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Serializer\SerializerInterface;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 
 #[Route('/api/v1')]
 class ClientProductController extends AbstractController
@@ -23,7 +24,8 @@ class ClientProductController extends AbstractController
         private ClientProductPriceRepository $clientProductPriceRepository,
         private SerializerInterface $serializer,
         private EntityManagerInterface $entityManager,
-        private DiscountResolver $discountResolver
+        private DiscountResolver $discountResolver,
+        private LoggerInterface $logger
     ) {}
 
     #[Route('/client/{clientId}/products/debug-relations', name: 'api_client_products_debug_relations', methods: ['GET'])]
@@ -42,7 +44,8 @@ class ClientProductController extends AbstractController
 
             return $this->json($debugInfo);
         } catch (\Exception $e) {
-            return $this->json(['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()], Response::HTTP_INTERNAL_SERVER_ERROR);
+            $this->logger->error('debugRelations failed', ['exception' => $e]);
+            return $this->json(['error' => 'Debug failed.'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -70,7 +73,8 @@ class ClientProductController extends AbstractController
 
             return $this->json($response);
         } catch (\Exception $e) {
-            return $this->json(['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()], Response::HTTP_INTERNAL_SERVER_ERROR);
+            $this->logger->error('getClientProducts failed', ['exception' => $e]);
+            return $this->json(['error' => 'Unable to load client products.'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -89,9 +93,11 @@ class ClientProductController extends AbstractController
     #[Route('/client/{clientId}/products/{productId}/price', name: 'api_set_client_product_price', methods: ['POST'])]
     public function setClientProductPrice(string $clientId, string $productId, Request $request): JsonResponse
     {
-        try {
-            $this->checkPermissions();
+        // Authorization runs outside the try so denials surface as 401/403, not a masked 500.
+        $this->checkPermissions();
+        $this->assertClientAccess($clientId);
 
+        try {
             $client = $this->findClientOrThrow($clientId);
             $product = $this->findProductOrThrow($productId);
 
@@ -104,7 +110,8 @@ class ClientProductController extends AbstractController
 
             return $this->json($responseData, $statusCode);
         } catch (\Exception $e) {
-            return $this->json(['error' => $e->getMessage()], Response::HTTP_INTERNAL_SERVER_ERROR);
+            $this->logger->error('setClientProductPrice failed', ['exception' => $e]);
+            return $this->json(['error' => 'Unable to set client product price.'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -294,8 +301,10 @@ class ClientProductController extends AbstractController
     }
     private function checkPermissions(): void
     {
-        if (!$this->isGranted('ROLE_ADMIN') && !$this->isGranted('ROLE_CLIENT_MANAGER')) {
-            throw new \RuntimeException('Insufficient permissions');
+        // Client-product pricing is master data: admin-only, matching security.yaml.
+        // (Removed a reference to a non-existent ROLE_CLIENT_MANAGER role.)
+        if (!$this->isGranted('ROLE_ADMIN')) {
+            throw $this->createAccessDeniedException('Insufficient permissions.');
         }
     }
 

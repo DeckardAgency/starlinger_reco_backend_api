@@ -3,16 +3,23 @@
 namespace App\EventSubscriber;
 
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\RateLimiter\LimiterInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 
+/**
+ * Throttles authentication-sensitive endpoints:
+ *  - /api/login_check          : per-IP AND per-username (credential stuffing across rotating IPs)
+ *  - /api/auth/forgot-password : per-IP (email bombing / enumeration attempts)
+ */
 class LoginRateLimitSubscriber implements EventSubscriberInterface
 {
     public function __construct(
-        private RateLimiterFactory $loginLimiter
+        private RateLimiterFactory $loginLimiter,
+        private RateLimiterFactory $loginUsernameLimiter,
+        private RateLimiterFactory $sensitiveOperationsLimiter
     ) {
     }
 
@@ -26,23 +33,32 @@ class LoginRateLimitSubscriber implements EventSubscriberInterface
     public function onKernelRequest(RequestEvent $event): void
     {
         $request = $event->getRequest();
+        $path = $request->getPathInfo();
+        $ip = $request->getClientIp() ?? 'unknown';
 
-        // Only apply rate limiting to login endpoint
-        if ($request->getPathInfo() !== '/api/login_check') {
+        if ($path === '/api/login_check') {
+            $this->enforce($this->loginLimiter->create($ip));
+
+            $content = json_decode($request->getContent(), true);
+            $username = is_array($content) ? ($content['username'] ?? null) : null;
+            if (is_string($username) && $username !== '') {
+                $this->enforce($this->loginUsernameLimiter->create('login_' . strtolower($username)));
+            }
             return;
         }
 
-        // Use IP address as the rate limit key
-        $limiter = $this->loginLimiter->create($request->getClientIp());
+        if ($path === '/api/auth/forgot-password') {
+            $this->enforce($this->sensitiveOperationsLimiter->create('forgot_' . $ip));
+        }
+    }
 
-        // Consume one token from the rate limiter
+    private function enforce(LimiterInterface $limiter): void
+    {
         $limit = $limiter->consume(1);
-
-        // If limit is exceeded, throw an exception
         if (!$limit->isAccepted()) {
             throw new TooManyRequestsHttpException(
                 $limit->getRetryAfter()->getTimestamp() - time(),
-                'Too many login attempts. Please try again later.'
+                'Too many attempts. Please try again later.'
             );
         }
     }

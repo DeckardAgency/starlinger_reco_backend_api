@@ -34,6 +34,7 @@ use Symfony\Component\Validator\Constraints as Assert;
             normalizationContext: ['groups' => ['order_info_message:read', 'media_item:read']]
         ),
         new Post(
+            securityPostDenormalize: "is_granted('OWN_ORDER', object)",
             normalizationContext: ['groups' => ['order_info_message:read', 'media_item:read']],
             denormalizationContext: ['groups' => ['order_info_message:write']]
         ),
@@ -49,6 +50,7 @@ use Symfony\Component\Validator\Constraints as Assert;
             normalizationContext: ['groups' => ['order_info_message:read', 'media_item:read', 'user:read']]
         ),
         new Post(
+            securityPostDenormalize: "is_granted('OWN_ORDER', object)",
             normalizationContext: ['groups' => ['order_info_message:read', 'media_item:read']],
             denormalizationContext: ['groups' => ['order_info_message:write']]
         )

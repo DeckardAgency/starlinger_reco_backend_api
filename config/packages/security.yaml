@@ -48,7 +48,8 @@ security:
         - { path: ^/api/login_check, roles: PUBLIC_ACCESS }
         - { path: ^/api/register, roles: PUBLIC_ACCESS }
         - { path: ^/api/token/refresh, roles: PUBLIC_ACCESS }
-        - { path: ^/api/docs, roles: PUBLIC_ACCESS }
+        # API schema/docs are admin-only (not an anonymous recon surface).
+        - { path: ^/api/docs, roles: ROLE_ADMIN }
         - { path: ^/api/user_invitations/verify, roles: PUBLIC_ACCESS }
         - { path: ^/api/user_invitations/complete, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/forgot-password, roles: PUBLIC_ACCESS }
@@ -58,9 +59,10 @@ security:
         # authenticated user (the shop/admin apps need them). Order/User/Address/
         # SupportTicket carry their own per-resource security with ownership rules.
         - { path: '^/api/(v1/)?(account_groups|client_product_prices|client|clients|countries|delivery_prices|delivery_types|discounts|documentations|documentation_revisions|documentation_media|fuel_surcharges|import_manual_statuses|import_manual_types|import_manuals|media_items|packaging_prices|payment_types|product_discounts|product_groups|product_product_links|products|tax_types|warehouses)(/|$)', methods: [POST, PUT, PATCH, DELETE], roles: ROLE_ADMIN }
-        # Customer-writable resources: require a webshop role (notification-only
-        # finance accounts are excluded). NOTE: per-object ownership scoping
-        # (own client only) still needs voters — follow-up.
+        # Customer-writable resources: require a webshop role. Per-object ownership
+        # (own client only) is enforced by ClientOwnershipExtension (addresses,
+        # support_tickets), OrderClientExtension + OrderAccessVoter (order_items),
+        # and AddressClientProcessor (address.client on write).
         - { path: '^/api/(v1/)?(addresses|support_tickets|order_items)(/|$)', methods: [POST, PUT, PATCH, DELETE], roles: [ROLE_CLIENT, ROLE_CLIENT_ADMIN, ROLE_ADMIN] }
         # Invitations are created by client admins / admins (verify & complete are public, matched above)
         - { path: '^/api/(v1/)?user_invitations(/|$)', methods: [POST, PUT, PATCH, DELETE], roles: [ROLE_CLIENT_ADMIN, ROLE_ADMIN] }

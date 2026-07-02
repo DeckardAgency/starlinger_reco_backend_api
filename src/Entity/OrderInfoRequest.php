@@ -43,6 +43,8 @@ use Symfony\Component\Validator\Constraints as Assert;
             security: "is_granted('ROLE_ADMIN')"
         ),
         new Patch(
+            security: "is_granted('OWN_ORDER', object)",
+            securityPostDenormalize: "is_granted('OWN_ORDER', object)",
             normalizationContext: ['groups' => ['order_info_request:read', 'order_info_message:read', 'media_item:read']],
             denormalizationContext: ['groups' => ['order_info_request:update']]
         ),

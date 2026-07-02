@@ -97,11 +97,17 @@ final class OrderPriceProcessor implements ProcessorInterface
             'modified_by' => $modifiedBy
         ]);
 
-        // Set the current user if it's a new Order and no user is set
-        if ($operation->getMethod() === 'POST' && $data->getUser() === null) {
-            $user = $this->security->getUser();
-            if ($user instanceof User) {
-                $data->setUser($user);
+        // Bind the order to the authenticated user. Non-admins may never create an
+        // order on behalf of another user (which would attribute it to another tenant);
+        // only admins may set an explicit user, defaulting to themselves.
+        if ($operation->getMethod() === 'POST') {
+            $authUser = $this->security->getUser();
+            if (!$this->security->isGranted('ROLE_ADMIN')) {
+                if ($authUser instanceof User) {
+                    $data->setUser($authUser);
+                }
+            } elseif ($data->getUser() === null && $authUser instanceof User) {
+                $data->setUser($authUser);
             }
         }
 
@@ -425,7 +431,17 @@ final class OrderPriceProcessor implements ProcessorInterface
                     'final_status' => $order->getStatus()
                 ]);
             } else {
-                // No direct workflow transition — admin can set any valid status directly
+                // No direct workflow transition available. Only admins may force an
+                // arbitrary status; non-admins must go through a valid transition.
+                if (!$this->security->isGranted('ROLE_ADMIN')) {
+                    $order->setStatus($oldStatus);
+                    throw new BadRequestHttpException(sprintf(
+                        'You are not allowed to change the order status from "%s" to "%s".',
+                        (string) $oldStatus,
+                        (string) $newStatus
+                    ));
+                }
+
                 $order->setStatus($newStatus);
 
                 $this->logger->info('Status set directly by admin (no workflow transition)', [

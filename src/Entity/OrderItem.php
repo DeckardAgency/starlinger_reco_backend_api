@@ -28,18 +28,21 @@ use ApiPlatform\Metadata\ApiProperty;
             normalizationContext: ['groups' => ['order_item:read']]
         ),
         new Post(
+            securityPostDenormalize: "is_granted('OWN_ORDER', object)",
             normalizationContext: ['groups' => ['order_item:read']],
             denormalizationContext: ['groups' => ['order_item:write']]
         ),
         new Put(
+            securityPostDenormalize: "is_granted('OWN_ORDER', object)",
             normalizationContext: ['groups' => ['order_item:read']],
             denormalizationContext: ['groups' => ['order_item:write']]
         ),
         new Patch(
+            securityPostDenormalize: "is_granted('OWN_ORDER', object)",
             normalizationContext: ['groups' => ['order_item:read']],
             denormalizationContext: ['groups' => ['order_item:write']]
         ),
-        new Delete()
+        new Delete(security: "is_granted('OWN_ORDER', object)")
     ],
     normalizationContext: ['groups' => ['order_item:read']],
     denormalizationContext: ['groups' => ['order_item:write']]

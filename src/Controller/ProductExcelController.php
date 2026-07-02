@@ -12,6 +12,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Psr\Log\LoggerInterface;
 
 class ProductExcelController extends AbstractController
@@ -22,6 +23,7 @@ class ProductExcelController extends AbstractController
     ) {}
 
     #[Route('/api/products/export/excel', name: 'api_products_export_excel', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function exportToExcel(ProductRepository $productRepository): Response
     {
         try {

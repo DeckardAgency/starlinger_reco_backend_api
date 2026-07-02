@@ -108,7 +108,9 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
             denormalizationContext: ['groups' => ['order:write']],
             processor: 'App\State\Processor\OrderPriceProcessor'
         ),
-        new Delete(),
+        new Delete(
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')"
+        ),
 
         // New operations for drafts
         new GetCollection(

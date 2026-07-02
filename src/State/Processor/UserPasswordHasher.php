@@ -30,6 +30,7 @@ final  class UserPasswordHasher implements ProcessorInterface
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): User
     {
         $this->enforceRolePolicy($data);
+        $this->enforceClientPolicy($data);
 
         if (!$data->getPlainPassword()) {
             return $this->processor->process($data, $operation, $uriVariables, $context);
@@ -66,6 +67,24 @@ final  class UserPasswordHasher implements ProcessorInterface
                 ? ($this->entityManager->getUnitOfWork()->getOriginalEntityData($data)['roles'] ?? null)
                 : null;
             $data->setRoles($original ?? []);
+        }
+    }
+
+    /**
+     * Prevent cross-tenant user creation via the writable `client` field: a non-admin
+     * (client-admin) may only create/edit users within their OWN client. Admins may set
+     * any client.
+     */
+    private function enforceClientPolicy(User $data): void
+    {
+        if ($this->security->isGranted('ROLE_ADMIN')) {
+            return;
+        }
+
+        $current = $this->security->getUser();
+        $ownClient = ($current instanceof User) ? $current->getClient() : null;
+        if ($ownClient !== null) {
+            $data->setClient($ownClient);
         }
     }
 }

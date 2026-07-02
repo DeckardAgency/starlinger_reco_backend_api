@@ -32,6 +32,7 @@ class DiscountResolver
      */
     private ?array $activeDiscounts = null;
     private ?array $linkedDiscountIds = null;
+    private ?array $productSpecificData = null;
 
     /**
      * Resolve the best applicable campaign discount for a product + client combination.
@@ -57,32 +58,20 @@ class DiscountResolver
 
     private function findProductSpecificCampaign(Product $product, ?Client $client, \DateTime $now): ?ResolvedDiscount
     {
-        $qb = $this->entityManager->createQueryBuilder();
-        $qb->select('pd', 'd')
-            ->from(ProductDiscount::class, 'pd')
-            ->join(Discount::class, 'd', 'WITH', 'pd.discountId = d.id')
-            ->where('pd.productId = :productId')
-            ->andWhere('d.isActive = true')
-            ->andWhere('(d.dateValidFrom IS NULL OR d.dateValidFrom <= :now)')
-            ->andWhere('(d.dateValidTo IS NULL OR d.dateValidTo >= :now)')
-            ->setParameter('productId', $product->getId())
-            ->setParameter('now', $now)
-            ->orderBy('d.priority', 'DESC')
-            ->addOrderBy('d.id', 'ASC');
+        $data = $this->getProductSpecificData($now);
 
-        $results = $qb->getQuery()->getResult();
-
-        $productDiscounts = [];
-        $discounts = [];
-        foreach ($results as $entity) {
-            if ($entity instanceof ProductDiscount) {
-                $productDiscounts[$entity->getDiscountId()] = $entity;
-            } elseif ($entity instanceof Discount) {
-                $discounts[$entity->getId()] = $entity;
-            }
+        $productDiscounts = $data['pdsByProduct'][$product->getId()] ?? [];
+        if (empty($productDiscounts)) {
+            return null;
         }
 
-        foreach ($discounts as $discountId => $discount) {
+        // Iterate discounts in global priority order, considering only those linked to
+        // this product (identical selection to the former per-product query).
+        foreach ($data['order'] as $discountId) {
+            if (!isset($productDiscounts[$discountId])) {
+                continue;
+            }
+            $discount = $data['discountsById'][$discountId];
             if (!$this->isDiscountApplicableToClient($discount, $client)) {
                 continue;
             }
@@ -124,6 +113,56 @@ class DiscountResolver
         }
 
         return null;
+    }
+
+    /**
+     * All active, in-date product-specific discount links, loaded in ONE query and
+     * indexed by product id, cached for the request. Previously this ran a query per
+     * product while serializing a product/order collection (the N+1). Returns:
+     *   'pdsByProduct'  => [productId => [discountId => ProductDiscount]]
+     *   'discountsById' => [discountId => Discount]
+     *   'order'         => [discountId, ...] in priority order (DESC), de-duplicated
+     *
+     * @return array{pdsByProduct: array<int, array<int, ProductDiscount>>, discountsById: array<int, Discount>, order: int[]}
+     */
+    private function getProductSpecificData(\DateTime $now): array
+    {
+        if ($this->productSpecificData !== null) {
+            return $this->productSpecificData;
+        }
+
+        $results = $this->entityManager->createQueryBuilder()
+            ->select('pd', 'd')
+            ->from(ProductDiscount::class, 'pd')
+            ->join(Discount::class, 'd', 'WITH', 'pd.discountId = d.id')
+            ->where('d.isActive = true')
+            ->andWhere('(d.dateValidFrom IS NULL OR d.dateValidFrom <= :now)')
+            ->andWhere('(d.dateValidTo IS NULL OR d.dateValidTo >= :now)')
+            ->setParameter('now', $now)
+            ->orderBy('d.priority', 'DESC')
+            ->addOrderBy('d.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        $pdsByProduct = [];
+        $discountsById = [];
+        $order = [];
+        foreach ($results as $entity) {
+            if ($entity instanceof ProductDiscount) {
+                $pdsByProduct[$entity->getProductId()][$entity->getDiscountId()] = $entity;
+            } elseif ($entity instanceof Discount) {
+                if (!isset($discountsById[$entity->getId()])) {
+                    $order[] = $entity->getId();
+                }
+                $discountsById[$entity->getId()] = $entity;
+            }
+        }
+
+        return $this->productSpecificData = [
+            'pdsByProduct' => $pdsByProduct,
+            'discountsById' => $discountsById,
+            'order' => $order,
+        ];
     }
 
     /**

@@ -213,6 +213,12 @@ class PasswordResetService
 
         $this->entityManager->flush();
 
+        // Revoke any outstanding refresh tokens so a previously-stolen token cannot
+        // survive the reset (access tokens are stateless and expire on their own).
+        $this->entityManager->createQuery(
+            'DELETE FROM App\Entity\RefreshToken r WHERE r.username = :username'
+        )->setParameter('username', $user->getUserIdentifier())->execute();
+
         $this->logger->info('Password reset completed', [
             'user_id' => $user->getId(),
             'user_email' => $user->getEmail(),

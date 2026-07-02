@@ -47,6 +47,8 @@ use Gedmo\Mapping\Annotation as Gedmo;
 ])]
 #[ORM\Entity(repositoryClass: ProductDiscountRepository::class)]
 #[ORM\Table(name: 'product_discount')]
+#[ORM\Index(name: 'idx_product_discount_product', columns: ['product_id'])]
+#[ORM\Index(name: 'idx_product_discount_discount', columns: ['discount_id'])]
 class ProductDiscount
 {
     #[ORM\Id]

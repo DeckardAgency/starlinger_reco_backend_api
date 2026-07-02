@@ -26,18 +26,21 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Post(
             normalizationContext: ['groups' => ['address:read']],
-            denormalizationContext: ['groups' => ['address:write']]
+            denormalizationContext: ['groups' => ['address:write']],
+            processor: \App\State\Processor\AddressClientProcessor::class
         ),
         new Get(
             normalizationContext: ['groups' => ['address:read']]
         ),
         new Put(
             normalizationContext: ['groups' => ['address:read']],
-            denormalizationContext: ['groups' => ['address:write']]
+            denormalizationContext: ['groups' => ['address:write']],
+            processor: \App\State\Processor\AddressClientProcessor::class
         ),
         new Patch(
             normalizationContext: ['groups' => ['address:read']],
-            denormalizationContext: ['groups' => ['address:write']]
+            denormalizationContext: ['groups' => ['address:write']],
+            processor: \App\State\Processor\AddressClientProcessor::class
         ),
         new Delete()
     ],
@@ -52,7 +55,8 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Post(
             normalizationContext: ['groups' => ['address:read']],
-            denormalizationContext: ['groups' => ['address:write']]
+            denormalizationContext: ['groups' => ['address:write']],
+            processor: \App\State\Processor\AddressClientProcessor::class
         )
     ],
     uriVariables: [

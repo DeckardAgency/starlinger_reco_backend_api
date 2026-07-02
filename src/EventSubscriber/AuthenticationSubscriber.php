@@ -44,55 +44,26 @@ class AuthenticationSubscriber implements EventSubscriberInterface
 
     public function onAuthenticationFailure(AuthenticationFailureEvent $event): void
     {
-        // Try to get the username from the request
+        // Maintain the lockout counter server-side, but NEVER reveal account existence,
+        // remaining-attempt counts, or lock state in the response — those differences let
+        // an attacker enumerate valid accounts and read per-account lock state. Every
+        // failure returns the same generic 401 that Lexik returns for unknown users.
         $request = $this->requestStack->getCurrentRequest();
-        if (!$request) {
-            return;
+        if ($request) {
+            $content = json_decode($request->getContent(), true);
+            $username = is_array($content) ? ($content['username'] ?? null) : null;
+
+            if ($username) {
+                $user = $this->userRepository->findOneBy(['email' => $username]);
+                if ($user instanceof User && !$this->loginAttemptService->checkAccountLock($user)['locked']) {
+                    $this->loginAttemptService->recordFailedAttempt($user);
+                }
+            }
         }
 
-        $content = json_decode($request->getContent(), true);
-        $username = $content['username'] ?? null;
-
-        if (!$username) {
-            return;
-        }
-
-        // Find the user by email
-        $user = $this->userRepository->findOneBy(['email' => $username]);
-
-        if (!$user) {
-            return;
-        }
-
-        // Check if account is already locked
-        $lockStatus = $this->loginAttemptService->checkAccountLock($user);
-        if ($lockStatus['locked']) {
-            $event->setResponse(new JsonResponse([
-                'code' => 423,
-                'message' => $lockStatus['message'],
-                'locked' => true,
-                'remainingMinutes' => $lockStatus['remainingMinutes'],
-            ], 423));
-            return;
-        }
-
-        // Record the failed attempt
-        $result = $this->loginAttemptService->recordFailedAttempt($user);
-
-        if ($result['locked']) {
-            $event->setResponse(new JsonResponse([
-                'code' => 423,
-                'message' => $result['message'],
-                'locked' => true,
-            ], 423));
-        } else {
-            // Modify the response to include remaining attempts info
-            $event->setResponse(new JsonResponse([
-                'code' => 401,
-                'message' => $result['message'],
-                'locked' => false,
-                'remainingAttempts' => $result['remainingAttempts'],
-            ], 401));
-        }
+        $event->setResponse(new JsonResponse([
+            'code' => 401,
+            'message' => 'Invalid credentials.',
+        ], 401));
     }
 }
