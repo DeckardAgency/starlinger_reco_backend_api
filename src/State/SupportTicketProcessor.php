@@ -113,7 +113,9 @@ class SupportTicketProcessor implements ProcessorInterface
         $originalFilename = pathinfo($uploadedFile->getClientOriginalName(), PATHINFO_FILENAME);
         $safeFilename = $this->slugger->slug($originalFilename);
         $extension = $uploadedFile->guessExtension() ?? 'bin';
-        $newFilename = sprintf('%s-%s.%s', $safeFilename, uniqid(), $extension);
+        // Cryptographically-random suffix: ticket attachments are served from the
+        // public docroot, so the URL must not be guessable/enumerable.
+        $newFilename = sprintf('%s-%s.%s', $safeFilename, bin2hex(random_bytes(16)), $extension);
 
         // Move file to permanent location
         $uploadedFile->move(

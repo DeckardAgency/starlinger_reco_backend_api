@@ -47,6 +47,8 @@ use Gedmo\Mapping\Annotation as Gedmo;
 ])]
 #[ORM\Entity(repositoryClass: ProductProductLinkRepository::class)]
 #[ORM\Table(name: 'product_product_link')]
+#[ORM\Index(name: 'idx_ppl_parent', columns: ['parent_product_id'])]
+#[ORM\Index(name: 'idx_ppl_child', columns: ['child_product_id'])]
 class ProductProductLink
 {
     #[ORM\Id]

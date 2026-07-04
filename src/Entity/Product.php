@@ -30,9 +30,10 @@ use ApiPlatform\OpenApi\Model;
 #[ORM\Index(name: "idx_product_part_no", columns: ["part_no"])]
 #[ORM\Index(name: "idx_product_name", columns: ["name"])]
 #[ORM\Index(name: "idx_product_slug", columns: ["slug"])]
+#[ORM\Index(name: "idx_product_product_group_id", columns: ["product_group_id"])]
 #[ApiResource(
     operations: [
-        new Get(normalizationContext: ['groups' => ['product:read', 'media_item:read']]),
+        new Get(normalizationContext: ['groups' => ['product:read', 'product:item', 'media_item:read']]),
         new GetCollection(
             paginationItemsPerPage: 30,
             paginationClientItemsPerPage: true,
@@ -63,15 +64,15 @@ use ApiPlatform\OpenApi\Model;
             name: 'export_excel'
         ),
         new Post(
-            normalizationContext: ['groups' => ['product:read', 'media_item:read']],
+            normalizationContext: ['groups' => ['product:read', 'product:item', 'media_item:read']],
             denormalizationContext: ['groups' => ['product:write', 'media_item:write']]
         ),
         new Put(
-            normalizationContext: ['groups' => ['product:read', 'media_item:read']],
+            normalizationContext: ['groups' => ['product:read', 'product:item', 'media_item:read']],
             denormalizationContext: ['groups' => ['product:write', 'media_item:write']]
         ),
         new Patch(
-            normalizationContext: ['groups' => ['product:read', 'media_item:read']],
+            normalizationContext: ['groups' => ['product:read', 'product:item', 'media_item:read']],
             denormalizationContext: ['groups' => ['product:write', 'media_item:write']]
         ),
         new Delete()
@@ -132,7 +133,7 @@ class Product
     private ?string $technicalDescription = null;
 
     #[ORM\Column(type: "text", nullable: true)]
-    #[Groups(['product:read', 'product:write'])]
+    #[Groups(['product:item', 'product:write'])]
     private ?string $machineText = null;
 
     #[ORM\Column(length: 255, nullable: true)]

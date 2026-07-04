@@ -36,7 +36,7 @@ final class ClientSearchFilter extends AbstractFilter
         $paramName = $queryNameGenerator->generateParameterName('search');
 
         $conditions = sprintf(
-            'LOWER(%1$s.name) LIKE LOWER(:%2$s) OR LOWER(%1$s.code) LIKE LOWER(:%2$s) OR LOWER(%1$s.email) LIKE LOWER(:%2$s)',
+            '%1$s.name LIKE :%2$s OR %1$s.code LIKE :%2$s OR %1$s.email LIKE :%2$s',
             $rootAlias, $paramName
         );
 

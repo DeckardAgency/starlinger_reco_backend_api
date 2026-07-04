@@ -12,10 +12,12 @@ framework:
             limit: 10
             interval: '15 minutes'
 
-        # General API endpoints - 100 requests per minute per user/IP
+        # Baseline abuse limit for the whole API, enforced per authenticated user (per IP
+        # for anonymous traffic) by LoginRateLimitSubscriber. Generous enough for a SPA
+        # that fires many requests per page load, low enough to blunt scraping/enumeration.
         api:
             policy: 'sliding_window'
-            limit: 100
+            limit: 300
             interval: '1 minute'
 
         # Stricter limit for sensitive operations (e.g., password reset)

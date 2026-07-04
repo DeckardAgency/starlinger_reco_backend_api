@@ -73,6 +73,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Entity(repositoryClass: AddressRepository::class)]
 #[ORM\Table(name: 'address')]
 #[ORM\Index(name: "idx_address_client", columns: ["client_id"])]
+#[ORM\Index(name: "idx_address_postal_code", columns: ["postal_code"])]
 class Address
 {
     #[ORM\Id]

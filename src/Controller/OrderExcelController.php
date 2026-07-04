@@ -98,13 +98,16 @@ class OrderExcelController extends AbstractController
                    ->setParameter('clientCode', $clientCodeFilter);
             }
 
-            $query = $qb->getQuery();
+            // Single result set reused for both sheets (this was previously fetched twice,
+            // once per sheet, doubling hydration). toIterable() is not an option here:
+            // Doctrine forbids iterating queries with fetch-joined to-many collections.
+            $orders = $qb->getQuery()->getResult();
 
             $row = 2;
             $lastOrderId = null;
             $orderStartRow = 2;
 
-            foreach ($query->getResult() as $order) {
+            foreach ($orders as $order) {
                 // Check if this is a new order
                 if ($lastOrderId !== $order->getId()) {
                     // Apply merge styling to previous order if exists
@@ -137,6 +140,19 @@ class OrderExcelController extends AbstractController
                 $this->mergeOrderCells($ordersSheet, $orderStartRow, $row - 1);
             }
 
+            // Apply borders to the whole data range in ONE call instead of one
+            // applyFromArray per row (PhpSpreadsheet's worst-case pattern).
+            if ($row > 2) {
+                $ordersSheet->getStyle('A2:J' . ($row - 1))->applyFromArray([
+                    'borders' => [
+                        'allBorders' => [
+                            'borderStyle' => Border::BORDER_THIN,
+                            'color' => ['rgb' => 'D9D9D9']
+                        ]
+                    ]
+                ]);
+            }
+
             // Add autofilter
             $ordersSheet->setAutoFilter('A1:J' . ($row - 1));
 
@@ -156,64 +172,42 @@ class OrderExcelController extends AbstractController
 
             $this->writeHeaders($itemsSheet, $itemHeaders);
 
-            // Fetch all order items with complete data (excluding draft orders)
-            $itemsQb = $orderItemRepository->createQueryBuilder('oi')
-                ->join('oi.orderRef', 'o')
-                ->join('oi.product', 'p')
-                ->leftJoin('o.user', 'u')
-                ->select('oi', 'o', 'p', 'u')
-                ->where('o.status != :draftStatus')
-                ->setParameter('draftStatus', 'draft')
-                ->orderBy('o.orderNumber', 'ASC');
-
-            if (!$isAdmin && $currentUser) {
-                $itemsQb->andWhere('u.id = :currentUserId')
-                        ->setParameter('currentUserId', $currentUser->getId());
-            }
-
-            if ($orderNumberFilter) {
-                $itemsQb->andWhere('o.orderNumber LIKE :orderNumber')
-                        ->setParameter('orderNumber', '%' . $orderNumberFilter . '%');
-            }
-
-            if (!empty($statusFilters)) {
-                $itemsQb->andWhere('o.status IN (:statuses)')
-                        ->setParameter('statuses', $statusFilters);
-            }
-
-            if ($clientCodeFilter) {
-                $itemsQb->leftJoin('u.client', 'c')
-                        ->andWhere('c.code = :clientCode')
-                        ->setParameter('clientCode', $clientCodeFilter);
-            }
-
-            $itemsQuery = $itemsQb->getQuery();
-
+            // Reuse the already-hydrated orders (same filters, same ordering: orders by
+            // orderNumber, items by id) instead of re-fetching everything a second time.
+            // Zebra fill style built once; per-row application is unavoidable for
+            // alternating rows, but the array isn't rebuilt each iteration.
+            $evenRowFill = [
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'F2F2F2']
+                ]
+            ];
             $row = 2;
-            foreach ($itemsQuery->getResult() as $orderItem) {
-                $order = $orderItem->getOrderRef();
-                $product = $orderItem->getProduct();
+            foreach ($orders as $order) {
                 $user = $order->getUser();
 
-                $itemsSheet->setCellValue('A' . $row, $order->getOrderNumber());
-                $itemsSheet->setCellValue('B' . $row, $user ? $user->getEmail() : '');
-                $itemsSheet->setCellValue('C' . $row, $product->getId());
-                $itemsSheet->setCellValue('D' . $row, $product->getName());
-                $itemsSheet->setCellValue('E' . $row, $product->getPartNo() ?? '');
-                $itemsSheet->setCellValue('F' . $row, $orderItem->getQuantity());
-                $itemsSheet->setCellValue('G' . $row, $orderItem->getCreatedAt() ? $orderItem->getCreatedAt()->format('Y-m-d H:i:s') : '');
+                foreach ($order->getItems() as $orderItem) {
+                    $product = $orderItem->getProduct();
+                    if ($product === null) {
+                        // The previous dedicated query inner-joined the product; keep that behavior.
+                        continue;
+                    }
 
-                // Apply styling
-                if ($row % 2 == 0) {
-                    $itemsSheet->getStyle('A' . $row . ':G' . $row)->applyFromArray([
-                        'fill' => [
-                            'fillType' => Fill::FILL_SOLID,
-                            'startColor' => ['rgb' => 'F2F2F2']
-                        ]
-                    ]);
+                    $itemsSheet->setCellValue('A' . $row, $order->getOrderNumber());
+                    $itemsSheet->setCellValue('B' . $row, $user ? $user->getEmail() : '');
+                    $itemsSheet->setCellValue('C' . $row, $product->getId());
+                    $itemsSheet->setCellValue('D' . $row, $product->getName());
+                    $itemsSheet->setCellValue('E' . $row, $product->getPartNo() ?? '');
+                    $itemsSheet->setCellValue('F' . $row, $orderItem->getQuantity());
+                    $itemsSheet->setCellValue('G' . $row, $orderItem->getCreatedAt() ? $orderItem->getCreatedAt()->format('Y-m-d H:i:s') : '');
+
+                    // Apply styling
+                    if ($row % 2 == 0) {
+                        $itemsSheet->getStyle('A' . $row . ':G' . $row)->applyFromArray($evenRowFill);
+                    }
+
+                    $row++;
                 }
-
-                $row++;
             }
 
             // Add autofilter to items sheet
@@ -225,6 +219,10 @@ class OrderExcelController extends AbstractController
                 $summarySheet->setTitle('Summary');
                 $this->createSummarySheet($summarySheet, $orderRepository, $isAdmin ? null : $currentUser);
             }
+
+            // All cell data is copied into the spreadsheet; detach the managed entities
+            // so the writer doesn't compete with the identity map for memory.
+            $this->entityManager->clear();
 
             // Create the writer
             $writer = new Xlsx($spreadsheet);
@@ -271,15 +269,8 @@ class OrderExcelController extends AbstractController
             $sheet->setCellValue('J' . $row, '');
         }
 
-        // Apply borders to all cells
-        $sheet->getStyle('A' . $row . ':J' . $row)->applyFromArray([
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => Border::BORDER_THIN,
-                    'color' => ['rgb' => 'D9D9D9']
-                ]
-            ]
-        ]);
+        // Borders are applied once over the full data range after the loop
+        // (see exportToExcel) instead of per row here.
     }
 
     private function mergeOrderCells($sheet, int $startRow, int $endRow): void
@@ -289,12 +280,15 @@ class OrderExcelController extends AbstractController
 
         foreach ($columnsToMerge as $column) {
             $sheet->mergeCells("{$column}{$startRow}:{$column}{$endRow}");
-            $sheet->getStyle("{$column}{$startRow}:{$column}{$endRow}")->applyFromArray([
-                'alignment' => [
-                    'vertical' => Alignment::VERTICAL_CENTER
-                ]
-            ]);
         }
+
+        // Vertical centering for the whole merged block in one call
+        // instead of one applyFromArray per column.
+        $sheet->getStyle("A{$startRow}:F{$endRow}")->applyFromArray([
+            'alignment' => [
+                'vertical' => Alignment::VERTICAL_CENTER
+            ]
+        ]);
 
         // Apply alternating row color to the entire order block
         if ($startRow % 2 == 0) {

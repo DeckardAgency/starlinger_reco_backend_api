@@ -23,11 +23,22 @@ use Symfony\Component\Validator\Constraints as Assert;
 use Gedmo\Mapping\Annotation as Gedmo;
 
 #[ORM\Entity(repositoryClass: MediaItemRepository::class)]
+#[ORM\Index(name: 'idx_media_item_mime_type', columns: ['mime_type'])]
 #[ApiResource(
     operations: [
-        new Get(normalizationContext: ['groups' => ['media_item:read']]),
-        new GetCollection(normalizationContext: ['groups' => ['media_item:read']]),
+        // Direct media reads are admin-only. Non-admins never hit these endpoints:
+        // media (product images, docs, ticket attachments) is delivered embedded in
+        // its parent resource, which carries its own tenant-ownership rules. Leaving
+        // the flat collection/item open let any authenticated user enumerate every
+        // file's path across all tenants.
+        new Get(security: "is_granted('ROLE_ADMIN')", normalizationContext: ['groups' => ['media_item:read']]),
+        new GetCollection(security: "is_granted('ROLE_ADMIN')", normalizationContext: ['groups' => ['media_item:read']]),
+        // Writes are admin-only. This mirrors the path-based access_control rule for
+        // media_items, but pins it to the operation so it can't drift if the routing
+        // regex changes. (Ticket attachments are created server-side by
+        // SupportTicketProcessor, not through this endpoint, so they're unaffected.)
         new Post(
+            security: "is_granted('ROLE_ADMIN')",
             controller: CreateMediaItemAction::class,
             openapi: new Operation(
                 requestBody: new RequestBody(
@@ -50,8 +61,8 @@ use Gedmo\Mapping\Annotation as Gedmo;
             output: MediaItem::class,
             deserialize: false
         ),
-        new Delete(),
-        new Patch(normalizationContext: ['groups' => ['media_item:read']])
+        new Delete(security: "is_granted('ROLE_ADMIN')"),
+        new Patch(security: "is_granted('ROLE_ADMIN')", normalizationContext: ['groups' => ['media_item:read']])
     ],
     normalizationContext: ['groups' => ['media_item:read']],
     denormalizationContext: ['groups' => ['media_item:write']]

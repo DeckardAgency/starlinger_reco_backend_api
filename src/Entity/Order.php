@@ -34,6 +34,10 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
 #[ORM\Index(name: "idx_order_created_at", columns: ["created_at"])]
 #[ORM\Index(name: "idx_order_user_id", columns: ["user_id"])]
 #[ORM\Index(name: "idx_order_number", columns: ["order_number"])]
+#[ORM\Index(name: "idx_order_draft_saved", columns: ["is_draft", "last_saved_at"])]
+#[ORM\Index(name: "idx_order_shipping_address_id", columns: ["shipping_address_id"])]
+#[ORM\Index(name: "idx_order_total_amount", columns: ["total_amount"])]
+#[ORM\Index(name: "idx_order_is_archived", columns: ["is_archived"])]
 #[ApiResource(
     operations: [
         // Existing operations
@@ -92,19 +96,19 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
         ),
         new Post(
             security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN') or is_granted('ROLE_USER_CLIENT_AGENT')",
-            normalizationContext: ['groups' => ['order:read']],
+            normalizationContext: ['groups' => ['order:read', 'order:item']],
             denormalizationContext: ['groups' => ['order:write']],
             processor: 'App\State\Processor\OrderPriceProcessor'
         ),
         new Put(
             security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN') or is_granted('ROLE_USER_CLIENT_AGENT')",
-            normalizationContext: ['groups' => ['order:read']],
+            normalizationContext: ['groups' => ['order:read', 'order:item']],
             denormalizationContext: ['groups' => ['order:write']],
             processor: 'App\State\Processor\OrderPriceProcessor'
         ),
         new Patch(
             security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN') or is_granted('ROLE_USER_CLIENT_AGENT')",
-            normalizationContext: ['groups' => ['order:read']],
+            normalizationContext: ['groups' => ['order:read', 'order:item']],
             denormalizationContext: ['groups' => ['order:write']],
             processor: 'App\State\Processor\OrderPriceProcessor'
         ),
@@ -202,7 +206,7 @@ class Order
     private float $totalTax = 0;
 
     #[ORM\Column(type: "text", nullable: true)]
-    #[Groups(['order:read', 'order:write'])]
+    #[Groups(['order:item', 'order:write'])]
     private ?string $notes = null;
 
     #[ORM\Column(length: 255, nullable: true)]
@@ -238,8 +242,11 @@ class Order
     /**
      * @var Collection<int, OrderItem>
      */
-    #[ORM\OneToMany(targetEntity: OrderItem::class, mappedBy: 'orderRef', cascade: ['persist', 'remove'], orphanRemoval: true)]
-    #[Groups(['order:read', 'order:write'])]
+    // fetch EXTRA_LAZY so getItemsCount() on list responses issues a COUNT(*)
+    // instead of hydrating the collection. Full items only serialize on item
+    // views / write responses (order:item group).
+    #[ORM\OneToMany(targetEntity: OrderItem::class, mappedBy: 'orderRef', cascade: ['persist', 'remove'], orphanRemoval: true, fetch: 'EXTRA_LAZY')]
+    #[Groups(['order:item', 'order:write'])]
     #[ApiProperty(readableLink: true, writableLink: true)]
     private Collection $items;
 
@@ -264,7 +271,7 @@ class Order
      */
     #[ORM\OneToMany(targetEntity: OrderLog::class, mappedBy: 'order', cascade: ['persist', 'remove'])]
     #[ORM\OrderBy(['createdAt' => 'DESC'])]
-    #[Groups(['order:read'])]
+    #[Groups(['order:item'])]
     private Collection $logs;
 
     // Tracking fields (for dispatched status)
@@ -294,7 +301,7 @@ class Order
      */
     #[ORM\OneToMany(targetEntity: OrderInfoRequest::class, mappedBy: 'order', cascade: ['persist', 'remove'])]
     #[ORM\OrderBy(['createdAt' => 'DESC'])]
-    #[Groups(['order:read'])]
+    #[Groups(['order:item'])]
     private Collection $infoRequests;
 
     /**
@@ -302,12 +309,12 @@ class Order
      */
     #[ORM\OneToMany(targetEntity: TrackingEvent::class, mappedBy: 'orderRef', cascade: ['persist', 'remove'], orphanRemoval: true)]
     #[ORM\OrderBy(['occurredAt' => 'DESC'])]
-    #[Groups(['order:read'])]
+    #[Groups(['order:item'])]
     private Collection $trackingEvents;
 
     // Cancellation fields (for canceled status)
     #[ORM\Column(type: "text", nullable: true)]
-    #[Groups(['order:read', 'order:write'])]
+    #[Groups(['order:item', 'order:write'])]
     private ?string $cancellationReason = null;
 
     #[ORM\Column(type: "datetime", nullable: true)]
@@ -497,6 +504,32 @@ class Order
     public function getItems(): Collection
     {
         return $this->items;
+    }
+
+    /**
+     * Number of line items. Serialized on list responses in place of the full
+     * items collection; EXTRA_LAZY makes this a COUNT(*) when uninitialized.
+     */
+    #[Groups(['order:read'])]
+    public function getItemsCount(): int
+    {
+        return $this->items->count();
+    }
+
+    /**
+     * Sum of item quantities ("parts ordered" in the frontends). Iterating
+     * initializes the collection, but without joining products — far cheaper
+     * than serializing the full item tree on every list row.
+     */
+    #[Groups(['order:read'])]
+    public function getTotalQuantity(): int
+    {
+        $total = 0;
+        foreach ($this->items as $item) {
+            $total += (int) $item->getQuantity();
+        }
+
+        return $total;
     }
 
     public function addItem(OrderItem $item): static

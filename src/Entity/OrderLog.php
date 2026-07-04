@@ -14,6 +14,7 @@ use Gedmo\Mapping\Annotation as Gedmo;
 #[ORM\Table(name: 'order_log')]
 #[ORM\Index(columns: ['order_id'], name: 'idx_order_log_order')]
 #[ORM\Index(name: 'idx_order_log_created_at', columns: ['created_at'])]
+#[ORM\Index(name: 'idx_order_log_status_change', columns: ['previous_status', 'new_status'])]
 #[ApiResource(
     operations: [
         new Get(

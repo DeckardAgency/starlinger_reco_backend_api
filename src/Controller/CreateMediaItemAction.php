@@ -119,7 +119,9 @@ final class CreateMediaItemAction extends AbstractController implements Processo
         $originalFilename = pathinfo($uploadedFile->getClientOriginalName(), PATHINFO_FILENAME);
         $safeFilename = $this->slugger->slug($originalFilename);
         $extension = $uploadedFile->guessExtension() ?? 'bin';
-        $newFilename = sprintf('%s-%s.%s', $safeFilename, uniqid(), $extension);
+        // Cryptographically-random suffix: files are served from the public docroot,
+        // so the URL must not be guessable/enumerable from an upload timestamp.
+        $newFilename = sprintf('%s-%s.%s', $safeFilename, bin2hex(random_bytes(16)), $extension);
 
         // Move file to permanent location
         try {

@@ -54,6 +54,7 @@ use Gedmo\Mapping\Annotation as Gedmo;
 #[ApiFilter(OrderFilter::class, properties: ['name', 'date', 'fuelSurcharge'])]
 #[ORM\Entity(repositoryClass: FuelSurchargeRepository::class)]
 #[ORM\Table]
+#[ORM\Index(name: 'idx_fuel_surcharge_type_date', columns: ['delivery_type_id', 'date'])]
 class FuelSurcharge
 {
     #[ORM\Id]

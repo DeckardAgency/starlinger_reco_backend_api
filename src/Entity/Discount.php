@@ -56,6 +56,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'isActive', 'priority', 'dateValidFrom', 'dateValidTo'])]
 #[ORM\Entity(repositoryClass: DiscountRepository::class)]
 #[ORM\Table]
+#[ORM\Index(name: 'idx_discount_active_priority', columns: ['is_active', 'priority'])]
 class Discount
 {
     #[ORM\Id]

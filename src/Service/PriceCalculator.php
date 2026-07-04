@@ -6,23 +6,129 @@ use App\Entity\Client;
 use App\Entity\Product;
 use App\Entity\Order;
 use App\Entity\ClientProductPrice;
+use App\Repository\ClientProductPriceRepository;
+use Symfony\Contracts\Service\ResetInterface;
 
-class PriceCalculator
+class PriceCalculator implements ResetInterface
 {
     /**
-     * Get client-specific price for a product
+     * Request-scoped prefetch cache: clientId => productId => ClientProductPrice|null.
+     * `null` means "prefetched, no custom price exists" so we don't re-query misses.
+     *
+     * @var array<int, array<int, ClientProductPrice|null>>
+     */
+    private array $prefetchedPrices = [];
+
+    public function __construct(
+        private ClientProductPriceRepository $clientProductPriceRepository
+    ) {}
+
+    /**
+     * Clear the prefetch cache (called by the container between requests and
+     * between Messenger messages, since workers are long-lived).
+     */
+    public function reset(): void
+    {
+        $this->prefetchedPrices = [];
+    }
+
+    /**
+     * Prefetch custom prices for a client and a set of products with a single
+     * query, so subsequent getClientProductPrice() calls hit the in-memory map
+     * instead of issuing one query per product.
+     *
+     * @param Product[] $products
+     */
+    public function prefetchClientPrices(Client $client, array $products): void
+    {
+        $clientId = $client->getId();
+        if ($clientId === null) {
+            return;
+        }
+
+        $missingIds = [];
+        foreach ($products as $product) {
+            if (!$product instanceof Product) {
+                continue;
+            }
+            $productId = $product->getId();
+            if ($productId === null || \array_key_exists($productId, $this->prefetchedPrices[$clientId] ?? [])) {
+                continue;
+            }
+            $missingIds[$productId] = true;
+        }
+
+        if ($missingIds === []) {
+            return;
+        }
+
+        // Pre-mark all requested products as misses; found rows overwrite below.
+        foreach (array_keys($missingIds) as $productId) {
+            $this->prefetchedPrices[$clientId][$productId] = null;
+        }
+
+        $rows = $this->clientProductPriceRepository->findBy([
+            'client' => $client,
+            'product' => array_keys($missingIds),
+        ]);
+
+        foreach ($rows as $clientProductPrice) {
+            $productId = $clientProductPrice->getProduct()?->getId();
+            if ($productId !== null) {
+                $this->prefetchedPrices[$clientId][$productId] = $clientProductPrice;
+            }
+        }
+    }
+
+    /**
+     * Get client-specific price for a product.
+     *
+     * Consults the prefetch map first (see prefetchClientPrices()); falls back
+     * to a targeted single-row lookup instead of scanning the client's whole
+     * price collection (which hydrated every ClientProductPrice row per call).
+     * (client, product) is unique (uniq_cpp_client_product), so at most one row exists.
      */
     public function getClientProductPrice(Client $client, Product $product): ?ClientProductPrice
     {
-        foreach ($client->getProductPrices() as $clientProductPrice) {
-            // Compare IDs directly
-            if ($clientProductPrice->getProduct()->getId() === $product->getId()
-                && $clientProductPrice->isValid()) {
-                return $clientProductPrice;
-            }
+        $clientId = $client->getId();
+        $productId = $product->getId();
+
+        if ($clientId !== null && $productId !== null
+            && \array_key_exists($clientId, $this->prefetchedPrices)
+            && \array_key_exists($productId, $this->prefetchedPrices[$clientId])
+        ) {
+            $clientProductPrice = $this->prefetchedPrices[$clientId][$productId];
+        } else {
+            $clientProductPrice = $this->clientProductPriceRepository->findCustomPrice($client, $product);
+        }
+
+        if ($clientProductPrice !== null && $clientProductPrice->isValid()) {
+            return $clientProductPrice;
         }
 
         return null;
+    }
+
+    /**
+     * Prefetch custom prices for all products in an order (single query).
+     */
+    private function prefetchForOrder(?Client $client, Order $order): void
+    {
+        if (!$client) {
+            return;
+        }
+
+        $products = [];
+        foreach ($order->getItems() as $item) {
+            $product = $item->getProduct();
+            if ($product !== null) {
+                $products[] = $product;
+            }
+        }
+
+        if ($products !== []) {
+            $this->prefetchClientPrices($client, $products);
+        }
     }
 
     /**
@@ -33,6 +139,7 @@ class PriceCalculator
         $totalAmount = 0;
         $user = $order->getUser();
         $client = $user ? $user->getClient() : null;
+        $this->prefetchForOrder($client, $order);
 
         foreach ($order->getItems() as $item) {
             $product = $item->getProduct();
@@ -69,6 +176,7 @@ class PriceCalculator
         $items = [];
         $user = $order->getUser();
         $client = $user ? $user->getClient() : null;
+        $this->prefetchForOrder($client, $order);
 
         foreach ($order->getItems() as $item) {
             $product = $item->getProduct();

@@ -21,6 +21,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table(name: 'tracking_event')]
 #[ORM\Index(name: 'idx_tracking_event_order', columns: ['order_ref_id'])]
 #[ORM\Index(name: 'idx_tracking_event_status', columns: ['status'])]
+#[ORM\Index(name: 'idx_tracking_event_order_occurred', columns: ['order_ref_id', 'occurred_at'])]
+#[ORM\Index(name: 'idx_tracking_event_source', columns: ['source'])]
 #[ApiResource(
     operations: [
         new GetCollection(

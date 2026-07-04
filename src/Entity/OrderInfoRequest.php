@@ -31,21 +31,21 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiResource(
     operations: [
         new Get(
-            normalizationContext: ['groups' => ['order_info_request:read', 'order_info_message:read', 'media_item:read', 'user:read']]
+            normalizationContext: ['groups' => ['order_info_request:read', 'order_info_request:item', 'order_info_message:read', 'media_item:read', 'user:read']]
         ),
         new GetCollection(
             paginationItemsPerPage: 30,
             normalizationContext: ['groups' => ['order_info_request:read', 'order_info_message:read', 'media_item:read']]
         ),
         new Post(
-            normalizationContext: ['groups' => ['order_info_request:read', 'order_info_message:read', 'media_item:read']],
+            normalizationContext: ['groups' => ['order_info_request:read', 'order_info_request:item', 'order_info_message:read', 'media_item:read']],
             denormalizationContext: ['groups' => ['order_info_request:write']],
             security: "is_granted('ROLE_ADMIN')"
         ),
         new Patch(
             security: "is_granted('OWN_ORDER', object)",
             securityPostDenormalize: "is_granted('OWN_ORDER', object)",
-            normalizationContext: ['groups' => ['order_info_request:read', 'order_info_message:read', 'media_item:read']],
+            normalizationContext: ['groups' => ['order_info_request:read', 'order_info_request:item', 'order_info_message:read', 'media_item:read']],
             denormalizationContext: ['groups' => ['order_info_request:update']]
         ),
         new Delete(security: "is_granted('ROLE_ADMIN')")
@@ -128,10 +128,11 @@ class OrderInfoRequest
         targetEntity: OrderInfoMessage::class,
         mappedBy: 'infoRequest',
         cascade: ['persist', 'remove'],
+        fetch: 'EXTRA_LAZY',
         orphanRemoval: true
     )]
     #[ORM\OrderBy(['createdAt' => 'ASC'])]
-    #[Groups(['order_info_request:read', 'order_info_request:write'])]
+    #[Groups(['order_info_request:item', 'order_info_request:write'])]
     #[ApiProperty(readableLink: true, writableLink: true)]
     private Collection $messages;
 

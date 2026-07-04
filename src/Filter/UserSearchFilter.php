@@ -37,7 +37,7 @@ final class UserSearchFilter extends AbstractFilter
 
         $queryBuilder
             ->andWhere(sprintf(
-                'LOWER(%1$s.email) LIKE LOWER(:%2$s) OR LOWER(%1$s.firstName) LIKE LOWER(:%2$s) OR LOWER(%1$s.lastName) LIKE LOWER(:%2$s)',
+                '%1$s.email LIKE :%2$s OR %1$s.firstName LIKE :%2$s OR %1$s.lastName LIKE :%2$s',
                 $rootAlias, $paramName
             ))
             ->setParameter($paramName, '%' . $value . '%');

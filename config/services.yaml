@@ -124,6 +124,7 @@ services:
             $loginLimiter: '@limiter.login'
             $loginUsernameLimiter: '@limiter.login_username'
             $sensitiveOperationsLimiter: '@limiter.sensitive_operations'
+            $apiLimiter: '@limiter.api'
 
     # Production data investigation/migration commands
     App\Command\InvestigateProductionDataCommand:

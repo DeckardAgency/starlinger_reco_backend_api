@@ -11,6 +11,7 @@ use PhpOffice\PhpSpreadsheet\Style\Border;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Psr\Log\LoggerInterface;
 
 class UserExcelController extends AbstractController
@@ -20,6 +21,7 @@ class UserExcelController extends AbstractController
     ) {}
 
     #[Route('/api/users/export/excel', name: 'users_export_excel', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function exportToExcel(UserRepository $userRepository): StreamedResponse
     {
         ini_set('memory_limit', '256M');

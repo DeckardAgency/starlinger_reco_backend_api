@@ -7,6 +7,7 @@ use App\Entity\Discount;
 use App\Entity\Product;
 use App\Entity\ProductDiscount;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Contracts\Service\ResetInterface;
 
 class ResolvedDiscount
 {
@@ -17,11 +18,22 @@ class ResolvedDiscount
     ) {}
 }
 
-class DiscountResolver
+class DiscountResolver implements ResetInterface
 {
     public function __construct(
         private EntityManagerInterface $entityManager
     ) {}
+
+    /**
+     * Clears the request-scoped caches. Called by the services resetter between
+     * messages in long-running Messenger workers so stale discounts aren't reused.
+     */
+    public function reset(): void
+    {
+        $this->activeDiscounts = null;
+        $this->linkedDiscountIds = null;
+        $this->productSpecificData = null;
+    }
 
     /**
      * Request-scoped caches. resolveDiscount() is invoked once per product while

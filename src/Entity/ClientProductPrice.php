@@ -47,6 +47,7 @@ use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
     'client.code' => 'exact',
 ])]
 #[ORM\Entity(repositoryClass: ClientProductPriceRepository::class)]
+#[ORM\UniqueConstraint(name: 'uniq_cpp_client_product', columns: ['client_id', 'product_id'])]
 #[UniqueEntity(
     fields: ['client', 'product'],
     message: 'This client already has a custom price for this product.'

@@ -8,7 +8,13 @@ api_platform:
             vary: ['Content-Type', 'Authorization', 'Origin']
         pagination_items_per_page: 30
         pagination_client_items_per_page: true
+        pagination_maximum_items_per_page: 100
     eager_loading:
-        max_joins: 50
+        # max_joins back at the default 30: it acts as a canary — the order/product
+        # collections no longer eager-join their to-many collections (order:item /
+        # product:item groups), so hitting the ceiling again means a serialization
+        # group regressed. fetch_partial removed: partial hydration puts incomplete
+        # entities into the identity map, which breaks custom normalizers/voters
+        # that touch non-selected fields.
+        max_joins: 30
         enabled: true
-        fetch_partial: true

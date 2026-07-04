@@ -65,6 +65,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table]
 #[ORM\Index(name: "idx_client_code", columns: ["code"])]
 #[ORM\Index(name: "idx_client_name", columns: ["name"])]
+#[ORM\Index(name: "idx_client_email", columns: ["email"])]
 class Client
 {
     #[ORM\Id]

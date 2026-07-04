@@ -16,6 +16,8 @@ use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
 
 #[ORM\Entity(repositoryClass: SupportTicketRepository::class)]
+#[ORM\Index(name: 'idx_support_ticket_status_created', columns: ['status', 'created_at'])]
+#[ORM\Index(name: 'idx_support_ticket_order_id', columns: ['order_id'])]
 #[ORM\HasLifecycleCallbacks]
 #[ApiResource(
     operations: [

@@ -57,17 +57,17 @@ class ClientProductController extends AbstractController
             $client = $this->findClientOrThrow($clientId);
             $filters = $this->extractFilters($request);
 
-            $allClientPrices = $this->clientProductPriceRepository->findBy(['client' => $client]);
-            $filteredClientPrices = $this->applyFilters($allClientPrices, $filters);
+            // Filtering + pagination in SQL; only the requested page is hydrated and formatted.
+            [$pagedClientPrices, $totalItems] = $this->clientProductPriceRepository->findFilteredPageForClient(
+                $client,
+                $filters['search'],
+                $filters['productName'],
+                $filters['productPartNo'],
+                $filters['page'],
+                $filters['itemsPerPage']
+            );
 
-            $formattedProducts = $this->formatProductsResponse($filteredClientPrices, $client);
-
-            // Apply pagination
-            $totalItems = count($formattedProducts);
-            $page = $filters['page'];
-            $itemsPerPage = $filters['itemsPerPage'];
-            $offset = ($page - 1) * $itemsPerPage;
-            $pagedProducts = array_slice($formattedProducts, $offset, $itemsPerPage);
+            $pagedProducts = $this->formatProductsResponse($pagedClientPrices, $client);
 
             $response = $this->buildResponse($clientId, $pagedProducts, $totalItems, $filters);
 
@@ -150,45 +150,6 @@ class ClientProductController extends AbstractController
         ];
     }
 
-
-    private function applyFilters(array $clientPrices, array $filters): array
-    {
-        $filtered = [];
-
-        foreach ($clientPrices as $clientPrice) {
-            $product = $clientPrice->getProduct();
-
-            if (!$product || !$this->productMatchesFilters($product, $filters)) {
-                continue;
-            }
-
-            $filtered[] = $clientPrice;
-        }
-
-        return $filtered;
-    }
-
-    private function productMatchesFilters(object $product, array $filters): bool
-    {
-        // OR search: if 'search' param is set, match name OR partNo
-        if (!empty($filters['search'])) {
-            $q = $filters['search'];
-            $nameMatch = stripos($product->getName() ?? '', $q) !== false;
-            $partNoMatch = stripos($product->getPartNo() ?? '', $q) !== false;
-            return $nameMatch || $partNoMatch;
-        }
-
-        // Individual filters use AND logic
-        if ($filters['productName'] && stripos($product->getName(), $filters['productName']) === false) {
-            return false;
-        }
-
-        if ($filters['productPartNo'] && stripos($product->getPartNo(), $filters['productPartNo']) === false) {
-            return false;
-        }
-
-        return true;
-    }
 
     private function formatProductsResponse(array $clientPrices, object $client): array
     {

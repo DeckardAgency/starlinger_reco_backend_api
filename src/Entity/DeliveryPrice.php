@@ -53,6 +53,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(OrderFilter::class, properties: ['name', 'dhlZone', 'sizeFrom', 'sizeTo', 'priceBase', 'stepStartsAt', 'forEveryNextSize', 'priceBaseStep'])]
 #[ORM\Entity(repositoryClass: DeliveryPriceRepository::class)]
 #[ORM\Table]
+#[ORM\Index(name: 'idx_delivery_price_lookup', columns: ['delivery_type_id', 'dhl_zone', 'size_from'])]
 class DeliveryPrice
 {
     #[ORM\Id]

@@ -1,17 +1,29 @@
 framework:
     messenger:
-        # Uncomment this (and the failed transport below) to send failed messages to this transport for later handling.
-        # failure_transport: failed
+        # Failed messages land here after retries are exhausted (inspect with messenger:failed:show)
+        failure_transport: failed
 
         transports:
             # https://symfony.com/doc/current/messenger.html#transport-configuration
-            # async: '%env(MESSENGER_TRANSPORT_DSN)%'
-            # failed: 'doctrine://default?queue_name=failed'
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                retry_strategy:
+                    max_retries: 3
+                    delay: 1000
+                    multiplier: 2
+            failed: 'doctrine://default?queue_name=failed'
             sync: 'sync://'
 
         routing:
-            # Route your messages to the transports
-            # 'App\Message\YourMessage': async
+            # Domain events (email notifications) — handled by a worker, off the HTTP request path.
+            # Run: php bin/console messenger:consume async
+            App\Message\OrderCreatedMessage: async
+            App\Message\OrderStatusChangedMessage: async
+            App\Message\OrderInfoRequestMessage: async
+            App\Message\OrderTrackingChangedMessage: async
+            App\Message\UserInvitedMessage: async
+            # Direct mailer sends (support tickets, password reset) go async too
+            Symfony\Component\Mailer\Messenger\SendEmailMessage: async
 
 # when@test:
 #    framework:

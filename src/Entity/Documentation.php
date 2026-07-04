@@ -25,22 +25,23 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 #[ORM\Entity(repositoryClass: DocumentationRepository::class)]
 #[ORM\Table]
+#[ORM\Index(name: 'idx_documentation_cat_pub_sort', columns: ['category', 'is_published', 'sort_order'])]
 #[ApiResource(
     operations: [
         new Get(normalizationContext: ['groups' => ['documentation:read', 'documentation:item']]),
         new GetCollection(normalizationContext: ['groups' => ['documentation:read']]),
         new Post(
-            normalizationContext: ['groups' => ['documentation:read']],
+            normalizationContext: ['groups' => ['documentation:read', 'documentation:item']],
             denormalizationContext: ['groups' => ['documentation:write']],
             processor: DocumentationRevisionProcessor::class
         ),
         new Put(
-            normalizationContext: ['groups' => ['documentation:read']],
+            normalizationContext: ['groups' => ['documentation:read', 'documentation:item']],
             denormalizationContext: ['groups' => ['documentation:write']],
             processor: DocumentationRevisionProcessor::class
         ),
         new Patch(
-            normalizationContext: ['groups' => ['documentation:read']],
+            normalizationContext: ['groups' => ['documentation:read', 'documentation:item']],
             denormalizationContext: ['groups' => ['documentation:write']],
             processor: DocumentationRevisionProcessor::class
         ),
@@ -77,7 +78,7 @@ class Documentation
     private ?string $slug = null;
 
     #[ORM\Column(type: "text")]
-    #[Groups(['documentation:read', 'documentation:write', 'documentation:item'])]
+    #[Groups(['documentation:write', 'documentation:item'])]
     #[Assert\NotBlank]
     private ?string $content = null;
 
@@ -173,6 +174,22 @@ class Documentation
     {
         $this->content = $content;
         return $this;
+    }
+
+    /**
+     * Short plain-text preview for list responses; the full content only
+     * serializes on item views (documentation:item) so lists don't ship
+     * entire article bodies.
+     */
+    #[Groups(['documentation:read'])]
+    public function getExcerpt(): string
+    {
+        $plain = trim(strip_tags((string) $this->content));
+        if (mb_strlen($plain) <= 160) {
+            return $plain;
+        }
+
+        return rtrim(mb_substr($plain, 0, 160)) . '…';
     }
 
     public function getCategory(): ?string

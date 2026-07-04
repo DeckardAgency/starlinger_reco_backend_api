@@ -250,6 +250,24 @@ final class OrderPriceProcessor implements ProcessorInterface
         // additionally override with its own onBehalfOfClient (mixed-client carts).
         $orderClient = $order->getOnBehalfOfClient() ?? $client;
 
+        // Prefetch client-specific prices in one query per involved client instead
+        // of one findCustomPrice query per item inside the loop below. Grouping
+        // mirrors the per-line client resolution (item onBehalfOfClient ?? orderClient).
+        $productsByClientId = [];
+        $clientsById = [];
+        foreach ($order->getItems() as $item) {
+            $product = $item->getProduct();
+            $itemClient = $item->getOnBehalfOfClient() ?? $orderClient;
+            if ($product === null || $itemClient === null || $itemClient->getId() === null) {
+                continue;
+            }
+            $clientsById[$itemClient->getId()] = $itemClient;
+            $productsByClientId[$itemClient->getId()][] = $product;
+        }
+        foreach ($productsByClientId as $clientId => $products) {
+            $this->priceCalculator->prefetchClientPrices($clientsById[$clientId], $products);
+        }
+
         foreach ($order->getItems() as $item) {
             /** @var OrderItem $item */
             $product = $item->getProduct();

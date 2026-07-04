@@ -97,14 +97,20 @@ class OrderCreatedMessageHandler
                 }
             }
 
+            // Calculate client-specific prices once and reuse for every
+            // notification path (admin, customer, finance) — the item details
+            // and total are identical for all recipients of this message.
+            $items = $this->priceCalculator->getOrderItemsDetails($order);
+            $totalAmount = $this->priceCalculator->calculateOrderTotal($order);
+
             // Send email to admin with user info
-            $this->sendAdminNotification($order, $modifiedBy);
+            $this->sendAdminNotification($order, $modifiedBy, $items, $totalAmount);
 
             // Send email to the customer if there's a valid user with email
-            $this->sendCustomerNotification($order);
+            $this->sendCustomerNotification($order, $items, $totalAmount);
 
             // Send email to Finance users belonging to the same client
-            $this->sendFinanceNotifications($order);
+            $this->sendFinanceNotifications($order, $items, $totalAmount);
 
         } catch (\Exception $e) {
             $this->logger->error('Error in OrderCreatedMessageHandler', [
@@ -118,13 +124,9 @@ class OrderCreatedMessageHandler
         }
     }
 
-    private function sendAdminNotification(Order $order, ?array $modifiedBy): void
+    private function sendAdminNotification(Order $order, ?array $modifiedBy, array $items, float $totalAmount): void
     {
         try {
-            // Calculate client-specific prices
-            $items = $this->priceCalculator->getOrderItemsDetails($order);
-            $totalAmount = $this->priceCalculator->calculateOrderTotal($order);
-
             // Get order history if any exists
             $orderHistory = $this->orderLogService->getOrderHistory($order);
 
@@ -171,7 +173,7 @@ class OrderCreatedMessageHandler
         }
     }
 
-    private function sendCustomerNotification(Order $order): void
+    private function sendCustomerNotification(Order $order, array $items, float $totalAmount): void
     {
         try {
             $user = $order->getUser();
@@ -186,10 +188,6 @@ class OrderCreatedMessageHandler
 
             $customerEmail = $user->getEmail();
             $customerName = $user->getFullName();
-
-            // Calculate client-specific prices
-            $items = $this->priceCalculator->getOrderItemsDetails($order);
-            $totalAmount = $this->priceCalculator->calculateOrderTotal($order);
 
             // Prepare template parameters
             $templateParams = [
@@ -253,7 +251,7 @@ class OrderCreatedMessageHandler
      * Notify all ROLE_FINANCE users belonging to the order's client
      * (Finance users only receive notifications, they have no webshop access).
      */
-    private function sendFinanceNotifications(Order $order): void
+    private function sendFinanceNotifications(Order $order, array $items, float $totalAmount): void
     {
         try {
             $client = $order->getUser()?->getClient();
@@ -275,9 +273,6 @@ class OrderCreatedMessageHandler
             if (empty($financeUsers)) {
                 return;
             }
-
-            $items = $this->priceCalculator->getOrderItemsDetails($order);
-            $totalAmount = $this->priceCalculator->calculateOrderTotal($order);
 
             $templateParams = [
                 'order' => $order,

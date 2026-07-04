@@ -95,11 +95,17 @@ class OrderStatusChangedMessageHandler
                 return;
             }
 
+            // Calculate client-specific prices once and reuse for both
+            // notification paths — item details and total are identical
+            // for all recipients of this message.
+            $items = $this->priceCalculator->getOrderItemsDetails($order);
+            $totalAmount = $this->priceCalculator->calculateOrderTotal($order);
+
             // Send admin notification with user info
-            $this->sendAdminNotification($order, $newStatus, $previousStatus, $modifiedBy);
+            $this->sendAdminNotification($order, $newStatus, $previousStatus, $modifiedBy, $items, $totalAmount);
 
             // Send customer notification
-            $this->sendCustomerNotification($order, $newStatus, $previousStatus);
+            $this->sendCustomerNotification($order, $newStatus, $previousStatus, $items, $totalAmount);
 
         } catch (\Exception $e) {
             $this->logger->error('Error in OrderStatusChangedMessageHandler', [
@@ -113,7 +119,7 @@ class OrderStatusChangedMessageHandler
         }
     }
 
-    private function sendAdminNotification(Order $order, string $newStatus, string $previousStatus, ?array $modifiedBy): void
+    private function sendAdminNotification(Order $order, string $newStatus, string $previousStatus, ?array $modifiedBy, array $items, float $totalAmount): void
     {
         try {
             // Determine which template to use based on the new status
@@ -154,10 +160,6 @@ class OrderStatusChangedMessageHandler
                     throw new \Exception('Email template not found: ' . $templateName);
                 }
             }
-
-            // Calculate client-specific prices
-            $items = $this->priceCalculator->getOrderItemsDetails($order);
-            $totalAmount = $this->priceCalculator->calculateOrderTotal($order);
 
             // Get order history for context
             $orderHistory = $this->orderLogService->getOrderHistory($order);
@@ -205,7 +207,7 @@ class OrderStatusChangedMessageHandler
         }
     }
 
-    private function sendCustomerNotification(Order $order, string $newStatus, string $previousStatus): void
+    private function sendCustomerNotification(Order $order, string $newStatus, string $previousStatus, array $items, float $totalAmount): void
     {
         try {
             $user = $order->getUser();
@@ -243,10 +245,6 @@ class OrderStatusChangedMessageHandler
             if (!$this->twig->getLoader()->exists($templateName)) {
                 $templateName = 'emails/customer/order_status_changed.html.twig';
             }
-
-            // Calculate client-specific prices
-            $items = $this->priceCalculator->getOrderItemsDetails($order);
-            $totalAmount = $this->priceCalculator->calculateOrderTotal($order);
 
             // Prepare template parameters
             $templateParams = [

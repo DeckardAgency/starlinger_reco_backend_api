@@ -37,7 +37,7 @@ final class ProductSearchFilter extends AbstractFilter
 
         // If the search value is numeric, also match by ID
         $conditions = sprintf(
-            'LOWER(%1$s.name) LIKE LOWER(:%2$s) OR LOWER(%1$s.partNo) LIKE LOWER(:%2$s)',
+            '%1$s.name LIKE :%2$s OR %1$s.partNo LIKE :%2$s',
             $rootAlias, $paramName
         );
 

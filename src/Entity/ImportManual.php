@@ -52,6 +52,7 @@ use Gedmo\Mapping\Annotation as Gedmo;
 #[ApiFilter(DateFilter::class, properties: ['dateStarted', 'dateFinished', 'createdAt'])]
 #[ORM\Entity]
 #[ORM\Table(name: 'import_manual_entity')]
+#[ORM\Index(name: 'idx_import_manual_created_at', columns: ['created_at'])]
 class ImportManual
 {
     #[ORM\Id]

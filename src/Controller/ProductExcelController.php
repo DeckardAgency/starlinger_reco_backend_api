@@ -81,6 +81,15 @@ class ProductExcelController extends AbstractController
 
             $query->setHint('doctrine.orm.disable_many_to_one_fetch', true);
 
+            // Zebra fill style built once; per-row application is unavoidable
+            // for alternating rows, but the array isn't rebuilt each iteration.
+            $evenRowFill = [
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'F2F2F2']
+                ]
+            ];
+
             $row = 2;
             foreach ($query->toIterable() as $product) {
                 $sheet->setCellValue('A' . $row, $product->getId());
@@ -97,12 +106,7 @@ class ProductExcelController extends AbstractController
 
                 // Apply zebra striping
                 if ($row % 2 == 0) {
-                    $sheet->getStyle('A' . $row . ':K' . $row)->applyFromArray([
-                        'fill' => [
-                            'fillType' => Fill::FILL_SOLID,
-                            'startColor' => ['rgb' => 'F2F2F2']
-                        ]
-                    ]);
+                    $sheet->getStyle('A' . $row . ':K' . $row)->applyFromArray($evenRowFill);
                 }
 
                 $row++;

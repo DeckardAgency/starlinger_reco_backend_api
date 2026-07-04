@@ -11,6 +11,7 @@ use PhpOffice\PhpSpreadsheet\Style\Border;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Psr\Log\LoggerInterface;
 
 class ClientExcelController extends AbstractController
@@ -20,6 +21,7 @@ class ClientExcelController extends AbstractController
     ) {}
 
     #[Route('/api/clients/export/excel', name: 'clients_export_excel', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function exportToExcel(ClientRepository $clientRepository): StreamedResponse
     {
         ini_set('memory_limit', '256M');

@@ -364,7 +364,7 @@ class ImportProductionDataCommand extends Command
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
-            $this->importedIds['tax_type'][] = (int) $row['id'];
+            $this->importedIds['tax_type'][(int) $row['id']] = true;
         }
 
         $this->io->writeln(sprintf('  Found %d tax types', count($rows)));
@@ -387,7 +387,7 @@ class ImportProductionDataCommand extends Command
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
-            $this->importedIds['account_group'][] = (int) $row['id'];
+            $this->importedIds['account_group'][(int) $row['id']] = true;
         }
 
         $this->io->writeln(sprintf('  Found %d account groups', count($rows)));
@@ -575,7 +575,7 @@ class ImportProductionDataCommand extends Command
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
-            $this->importedIds['country'][] = (int) $row['id'];
+            $this->importedIds['country'][(int) $row['id']] = true;
         }
 
         $this->io->writeln(sprintf('  Found %d countries', count($rows)));
@@ -620,7 +620,7 @@ class ImportProductionDataCommand extends Command
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
-            $this->importedIds['client'][] = (int) $row['id'];
+            $this->importedIds['client'][(int) $row['id']] = true;
         }
 
         $this->io->writeln(sprintf('  Found %d clients', count($rows)));
@@ -670,7 +670,7 @@ class ImportProductionDataCommand extends Command
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
-            $this->importedIds['warehouse'][] = (int) $row['id'];
+            $this->importedIds['warehouse'][(int) $row['id']] = true;
         }
 
         $this->io->writeln(sprintf('  Found %d warehouses', count($rows)));
@@ -742,7 +742,7 @@ class ImportProductionDataCommand extends Command
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
             $usedEmails[strtolower($email)] = true;
-            $this->importedIds['user'][] = $userId;
+            $this->importedIds['user'][$userId] = true;
             if ($clientId) {
                 $this->accountUserMap[$clientId] = $userId;
             }
@@ -761,7 +761,7 @@ class ImportProductionDataCommand extends Command
             $accountId = isset($row['account_id']) ? (int) $row['account_id'] : null;
 
             // Only import contacts for imported clients
-            if ($this->storeFilter && $accountId && !in_array($accountId, $this->importedIds['client'] ?? [])) {
+            if ($this->storeFilter && $accountId && !isset($this->importedIds['client'][$accountId])) {
                 continue;
             }
 
@@ -805,7 +805,7 @@ class ImportProductionDataCommand extends Command
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
             $usedEmails[strtolower($email)] = true;
-            $this->importedIds['user'][] = $userId;
+            $this->importedIds['user'][$userId] = true;
             $contactUsers++;
 
             // Build account→user map (first user per account wins)
@@ -884,7 +884,7 @@ class ImportProductionDataCommand extends Command
                 continue;
             }
             // Only import addresses for imported clients
-            if (!in_array($clientId, $this->importedIds['client'] ?? [])) {
+            if (!isset($this->importedIds['client'][$clientId])) {
                 continue;
             }
 
@@ -961,7 +961,7 @@ class ImportProductionDataCommand extends Command
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
-            $this->importedIds['delivery_type'][] = (int) $row['id'];
+            $this->importedIds['delivery_type'][(int) $row['id']] = true;
         }
 
         $this->io->writeln(sprintf('  Found %d delivery types', count($rows)));
@@ -1016,7 +1016,7 @@ class ImportProductionDataCommand extends Command
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
-            $this->importedIds['product_group'][] = (int) $row['id'];
+            $this->importedIds['product_group'][(int) $row['id']] = true;
         }
 
         $this->io->writeln(sprintf('  Found %d product groups', count($rows)));
@@ -1178,7 +1178,7 @@ class ImportProductionDataCommand extends Command
                     'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                     'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
                 ];
-                $this->importedIds['product'][] = (int) $row['id'];
+                $this->importedIds['product'][(int) $row['id']] = true;
                 $total++;
             }
 
@@ -1212,8 +1212,8 @@ class ImportProductionDataCommand extends Command
 
             // Only import links for imported products
             if ($this->storeFilter) {
-                if ($parentId && !in_array($parentId, $this->importedIds['product'] ?? [])) continue;
-                if ($childId && !in_array($childId, $this->importedIds['product'] ?? [])) continue;
+                if ($parentId && !isset($this->importedIds['product'][$parentId])) continue;
+                if ($childId && !isset($this->importedIds['product'][$childId])) continue;
             }
 
             $rows[] = [
@@ -1259,8 +1259,8 @@ class ImportProductionDataCommand extends Command
 
                 // Filter by imported entities
                 if ($this->storeFilter) {
-                    if (!in_array($clientId, $this->importedIds['client'] ?? [])) continue;
-                    if (!in_array($productId, $this->importedIds['product'] ?? [])) continue;
+                    if (!isset($this->importedIds['client'][$clientId])) continue;
+                    if (!isset($this->importedIds['product'][$productId])) continue;
                 }
 
                 $batch[] = [
@@ -1336,7 +1336,7 @@ class ImportProductionDataCommand extends Command
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
-            $this->importedIds['order'][] = (int) $row['id'];
+            $this->importedIds['order'][(int) $row['id']] = true;
         }
 
         if ($skippedNoUser > 0) {
@@ -1362,8 +1362,8 @@ class ImportProductionDataCommand extends Command
             if (!$orderId || !$productId) continue;
 
             // Only import items for imported orders and products
-            if (!in_array($orderId, $this->importedIds['order'] ?? [])) continue;
-            if (!in_array($productId, $this->importedIds['product'] ?? [])) continue;
+            if (!isset($this->importedIds['order'][$orderId])) continue;
+            if (!isset($this->importedIds['product'][$productId])) continue;
 
             $qty = (int) (float) ($row['qty'] ?? 1);
             if ($qty < 1) $qty = 1;
@@ -1407,7 +1407,7 @@ class ImportProductionDataCommand extends Command
             $orderId = isset($row['order_id']) ? (int) $row['order_id'] : null;
             if (!$orderId) continue;
 
-            if ($this->storeFilter && !in_array($orderId, $this->importedIds['order'] ?? [])) {
+            if ($this->storeFilter && !isset($this->importedIds['order'][$orderId])) {
                 continue;
             }
 
@@ -1444,7 +1444,7 @@ class ImportProductionDataCommand extends Command
         $rows = [];
         foreach ($source as $row) {
             $productId = isset($row['product_id']) ? (int) $row['product_id'] : null;
-            if ($this->storeFilter && $productId && !in_array($productId, $this->importedIds['product'] ?? [])) {
+            if ($this->storeFilter && $productId && !isset($this->importedIds['product'][$productId])) {
                 continue;
             }
 
