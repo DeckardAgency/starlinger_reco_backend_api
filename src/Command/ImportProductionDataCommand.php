@@ -26,6 +26,7 @@ class ImportProductionDataCommand extends Command
     private array $currencyMap = [];
     private array $orderStateMap = [];
     private array $cityMap = [];
+    private array $taxTypeMap = []; // legacy tax_type id → percent
     private array $accountUserMap = []; // account_id → first user_id
     private array $importedIds = [];
     private array $stats = [];
@@ -168,6 +169,16 @@ class ImportProductionDataCommand extends Command
             $this->io->warning('Could not build currency map: ' . $e->getMessage());
         }
 
+        // Tax type map: id → percent (for order_item tax_percent)
+        try {
+            $taxTypes = $legacy->fetchAllAssociative('SELECT id, percent FROM tax_type_entity');
+            foreach ($taxTypes as $row) {
+                $this->taxTypeMap[(int) $row['id']] = (float) $row['percent'];
+            }
+        } catch (\Exception $e) {
+            $this->io->warning('Could not build tax type map: ' . $e->getMessage());
+        }
+
         // Order state map: id → status string
         try {
             $states = $legacy->fetchAllAssociative('SELECT id, name FROM order_state_entity');
@@ -196,9 +207,14 @@ class ImportProductionDataCommand extends Command
 
             if (!empty($cityIds)) {
                 $placeholders = implode(',', $cityIds);
-                $cities = $legacy->fetchAllAssociative("SELECT id, name FROM city_entity WHERE id IN ({$placeholders})");
+                // postal_code and country_id also live on city_entity (address_entity has neither)
+                $cities = $legacy->fetchAllAssociative("SELECT id, name, postal_code, country_id FROM city_entity WHERE id IN ({$placeholders})");
                 foreach ($cities as $row) {
-                    $this->cityMap[(int) $row['id']] = $row['name'];
+                    $this->cityMap[(int) $row['id']] = [
+                        'name' => $row['name'],
+                        'postal_code' => $row['postal_code'] ?? null,
+                        'country_id' => !empty($row['country_id']) ? (int) $row['country_id'] : null,
+                    ];
                 }
             }
             $this->io->writeln(sprintf('  City map: %d entries (filtered from referenced)', count($this->cityMap)));
@@ -466,7 +482,7 @@ class ImportProductionDataCommand extends Command
                 'icon' => $row['icon'] ?? null,
                 'allow_recurring_payment' => $this->toBool($row['allow_recurring_payment'] ?? 0),
                 'recurring_days_reminder' => isset($row['recurring_days_reminder']) ? (int) $row['recurring_days_reminder'] : null,
-                'use_as_default' => $this->toBool($row['use_as_default'] ?? 0),
+                'use_as_default' => $this->toBool($this->extractLocalizedValue($row['use_as_default'] ?? null) ?? 0),
                 'is_active' => $this->toBool($row['is_active'] ?? $row['active'] ?? 1),
                 'sort_order' => (int) ($row['sort_order'] ?? $row['ord'] ?? 0),
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
@@ -515,8 +531,8 @@ class ImportProductionDataCommand extends Command
                 'id' => (int) $row['id'],
                 'name' => $row['name'] ?? 'Unknown',
                 'is_active' => $this->toBool($row['is_active'] ?? $row['active'] ?? 1),
-                'date_valid_from' => $row['date_valid_from'] ?? null,
-                'date_valid_to' => $row['date_valid_to'] ?? null,
+                'date_valid_from' => $row['date_from'] ?? null,
+                'date_valid_to' => $row['date_to'] ?? null,
                 'priority' => (int) ($row['priority'] ?? $row['ord'] ?? 0),
                 'discount_percent' => $row['discount_percent'] ?? $row['discount'] ?? null,
                 'rules' => !empty($row['rules']) ? $row['rules'] : null,
@@ -540,7 +556,9 @@ class ImportProductionDataCommand extends Command
         $rows = [];
 
         foreach ($source as $row) {
-            $taxTypeId = isset($row['tax_type_id']) ? (int) $row['tax_type_id'] : null;
+            // Legacy tax_type_id is NULL for all rows but reco country.tax_type_id is NOT NULL:
+            // default to standard tax type 1 (matches existing production-reco data)
+            $taxTypeId = !empty($row['tax_type_id']) ? (int) $row['tax_type_id'] : 1;
             $countryName = $this->extractLocalizedName($row['name'] ?? null, 'Unknown');
             $code = $row['code'] ?? null;
             if (empty($code)) {
@@ -569,7 +587,7 @@ class ImportProductionDataCommand extends Command
                 'name' => $countryName,
                 'code' => $code,
                 'european_union' => $this->toBool($row['european_union'] ?? $row['eu'] ?? 0),
-                'dhl_zone' => isset($row['dhl_zone']) ? (int) $row['dhl_zone'] : null,
+                'dhl_zone' => isset($row['dhl_zone_id']) ? (int) $row['dhl_zone_id'] : null,
                 'tax_type_id' => $taxTypeId,
                 'is_active' => $this->toBool($row['is_active'] ?? $row['active'] ?? 1),
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
@@ -638,16 +656,14 @@ class ImportProductionDataCommand extends Command
         $rows = [];
 
         foreach ($source as $row) {
-            $cityName = null;
-            if (isset($row['city_id']) && $row['city_id']) {
-                $cityName = $this->cityMap[(int) $row['city_id']] ?? null;
-            }
-            if (!$cityName && isset($row['city'])) {
-                $cityName = $row['city'];
-            }
+            $city = isset($row['city_id']) && $row['city_id']
+                ? ($this->cityMap[(int) $row['city_id']] ?? null)
+                : null;
+            $cityName = $city['name'] ?? $row['city'] ?? null;
 
             $rows[] = [
                 'id' => (int) $row['id'],
+                'country_id' => $city['country_id'] ?? null,
                 'name' => $this->extractLocalizedName($row['name'] ?? null, 'Unknown'),
                 'code' => $row['code'] ?? null,
                 'address' => $row['address'] ?? null,
@@ -666,7 +682,6 @@ class ImportProductionDataCommand extends Command
                 'keep_url' => $this->toBool($row['keep_url'] ?? 0),
                 'auto_generate_url' => $this->toBool($row['auto_generate_url'] ?? 0),
                 'remote_id' => isset($row['remote_id']) ? (int) $row['remote_id'] : null,
-                'country_id' => isset($row['country_id']) && $row['country_id'] ? (int) $row['country_id'] : null,
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
@@ -692,6 +707,19 @@ class ImportProductionDataCommand extends Command
 
         // Step 1: Import existing user_entity records (admin/internal users)
         $userSource = $legacy->fetchAllAssociative('SELECT * FROM user_entity WHERE entity_state_id = 1 OR entity_state_id IS NULL');
+
+        // Real role assignments live in user_role_entity/role_entity —
+        // user_entity.roles only ever holds ROLE_USER or an empty array in production
+        $roleRows = $legacy->fetchAllAssociative(
+            'SELECT ur.core_user_id, r.role_code
+             FROM user_role_entity ur
+             JOIN role_entity r ON r.id = ur.role_id
+             WHERE ur.entity_state_id = 1 OR ur.entity_state_id IS NULL'
+        );
+        $userRoleMap = []; // core_user_id → [role_code, ...]
+        foreach ($roleRows as $rr) {
+            $userRoleMap[(int) $rr['core_user_id']][] = $rr['role_code'];
+        }
 
         // Build account→user map via account_entity.owner_id (for fallback)
         $accountOwners = $legacy->fetchAllAssociative('SELECT id, owner_id FROM account_entity WHERE owner_id IS NOT NULL AND owner_id > 0');
@@ -721,7 +749,7 @@ class ImportProductionDataCommand extends Command
                     }
                 }
             }
-            $roles = $this->mapFosRoles($roles);
+            $roles = $this->mapFosRoles(array_merge($roles, $userRoleMap[$userId] ?? []));
 
             $clientId = $ownerToAccountMap[$userId] ?? null;
 
@@ -862,6 +890,9 @@ class ImportProductionDataCommand extends Command
         foreach ($fosRoles as $role) {
             $role = strtoupper(trim($role));
             $recoRoles[] = match (true) {
+                // COMMERCE_ADMIN must be checked before the generic ADMIN match:
+                // legacy webshop staff become client admins, not backend admins
+                str_contains($role, 'COMMERCE_ADMIN') => 'ROLE_CLIENT_ADMIN',
                 str_contains($role, 'SUPER') => 'ROLE_ADMIN',
                 str_contains($role, 'ADMIN') => 'ROLE_ADMIN',
                 str_contains($role, 'MANAGER') => 'ROLE_CLIENT_ADMIN',
@@ -888,23 +919,19 @@ class ImportProductionDataCommand extends Command
                 continue;
             }
 
-            $cityName = null;
-            if (isset($row['city_id']) && $row['city_id']) {
-                $cityName = $this->cityMap[(int) $row['city_id']] ?? null;
-            }
-            if (!$cityName) {
-                $cityName = $row['city'] ?? 'Unknown';
-            }
+            $city = isset($row['city_id']) && $row['city_id']
+                ? ($this->cityMap[(int) $row['city_id']] ?? null)
+                : null;
 
             $rows[] = [
                 'id' => (int) $row['id'],
                 'client_id' => $clientId,
-                'country_id' => isset($row['country_id']) && $row['country_id'] ? (int) $row['country_id'] : null,
+                'country_id' => $city['country_id'] ?? null,
                 'street' => $row['street'] ?? 'N/A',
-                'city' => $cityName,
-                'postal_code' => $row['postal_code'] ?? null,
+                'city' => $city['name'] ?? 'Unknown',
+                'postal_code' => $city['postal_code'] ?? null,
                 'is_billing' => $this->toBool($row['billing'] ?? 0),
-                'is_delivery' => $this->toBool($row['shipping'] ?? $row['delivery'] ?? 0),
+                'is_delivery' => $this->toBool($row['show_as_delivery'] ?? $row['default_shipping_address'] ?? 0),
                 'is_active' => $this->toBool($row['active'] ?? $row['is_active'] ?? 1),
                 'name' => $row['name'] ?? null,
                 'phone' => $row['phone'] ?? null,
@@ -912,6 +939,7 @@ class ImportProductionDataCommand extends Command
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
+            $this->importedIds['address'][(int) $row['id']] = true;
         }
 
         $this->io->writeln(sprintf('  Found %d addresses', count($rows)));
@@ -1267,7 +1295,9 @@ class ImportProductionDataCommand extends Command
                     'id' => (int) $row['id'],
                     'client_id' => $clientId,
                     'product_id' => $productId,
-                    'price' => (float) ($row['price'] ?? $row['price_base'] ?? 0),
+                    // The actual per-client price lives in discount_price_base;
+                    // price_base is NULL for every row in production
+                    'price' => (float) ($row['discount_price_base'] ?? $row['price_base'] ?? 0),
                     'discount_percentage' => isset($row['discount_percentage']) ? (float) $row['discount_percentage'] :
                                              (isset($row['discount']) ? (float) $row['discount'] : null),
                     'valid_from' => $row['valid_from'] ?? $row['date_valid_from'] ?? null,
@@ -1320,12 +1350,25 @@ class ImportProductionDataCommand extends Command
             $shippingAddr = $row['account_shipping_street'] ?? null;
             $billingAddr = $row['account_billing_street'] ?? null;
 
+            // Snapshot address FK — only keep it if that address was actually imported
+            // (legacy may reference inactive addresses that were filtered out)
+            $shippingAddressId = !empty($row['account_shipping_address_id']) ? (int) $row['account_shipping_address_id'] : null;
+            if ($shippingAddressId && !isset($this->importedIds['address'][$shippingAddressId])) {
+                $shippingAddressId = null;
+            }
+
             $rows[] = [
                 'id' => (int) $row['id'],
                 'user_id' => $userId,
                 'order_number' => $row['increment_id'] ? (string) $row['increment_id'] : 'ORD-' . $row['id'],
                 'status' => $status,
                 'total_amount' => (float) ($row['base_price_total'] ?? $row['price_total'] ?? 0),
+                'subtotal_before_discount' => (float) ($row['base_price_without_tax'] ?? 0),
+                'total_discount' => (float) ($row['base_price_discount'] ?? 0),
+                'total_tax' => (float) ($row['base_price_tax'] ?? 0),
+                'payment_type_id' => !empty($row['payment_type_id']) ? (int) $row['payment_type_id'] : null,
+                'delivery_type_id' => !empty($row['delivery_type_id']) ? (int) $row['delivery_type_id'] : null,
+                'shipping_address_id' => $shippingAddressId,
                 'notes' => null,
                 'shipping_address' => $shippingAddr,
                 'billing_address' => $billingAddr,
@@ -1378,6 +1421,10 @@ class ImportProductionDataCommand extends Command
                 'unit_price' => $unitPrice,
                 'subtotal' => $subtotal,
                 'is_custom_price' => 0,
+                'original_unit_price' => isset($row['original_price_item']) ? (float) $row['original_price_item'] : null,
+                'discount_percent' => (float) ($row['percentage_discount'] ?? 0),
+                'tax_percent' => !empty($row['tax_type_id']) ? ($this->taxTypeMap[(int) $row['tax_type_id']] ?? 0) : 0,
+                'tax_amount' => (float) ($row['base_price_tax'] ?? 0),
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
@@ -1478,8 +1525,8 @@ class ImportProductionDataCommand extends Command
         foreach ($source as $row) {
             $rows[] = [
                 'id' => (int) $row['id'],
-                'type_id' => isset($row['type_id']) ? (int) $row['type_id'] : null,
-                'status_id' => isset($row['status_id']) ? (int) $row['status_id'] : null,
+                'type_id' => !empty($row['import_manual_type_id']) ? (int) $row['import_manual_type_id'] : null,
+                'status_id' => !empty($row['import_manual_status_id']) ? (int) $row['import_manual_status_id'] : null,
                 'user_id' => isset($row['user_id']) ? (int) $row['user_id'] : null,
                 'file' => $row['file'] ?? null,
                 'filename' => $row['filename'] ?? null,
