@@ -44,6 +44,9 @@ class OrderTrackingController extends AbstractController
 
         return new JsonResponse([
             'created' => $createdCount,
+            // Tracking can advance the order status (e.g. carrier reports delivery);
+            // return it so the UI can update its form state and not save a stale status back.
+            'orderStatus' => $order->getStatus(),
             'events' => $payload,
         ], Response::HTTP_OK);
     }

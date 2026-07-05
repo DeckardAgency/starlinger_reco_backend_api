@@ -137,7 +137,7 @@ class OrderStatusChangedMessageHandler
                 Order::STATUS_SHIPPED => 'Order #' . $order->getOrderNumber() . ' has been shipped',
                 Order::STATUS_DELIVERED => 'Order #' . $order->getOrderNumber() . ' has been delivered',
                 Order::STATUS_CANCELED => 'Order #' . $order->getOrderNumber() . ' has been canceled',
-                default => 'Order #' . $order->getOrderNumber() . ' status changed to ' . $newStatus,
+                default => 'Order #' . $order->getOrderNumber() . ' status changed to ' . ucwords(str_replace('_', ' ', $newStatus)),
             };
 
             $this->logger->info('Preparing to send admin email notification', [

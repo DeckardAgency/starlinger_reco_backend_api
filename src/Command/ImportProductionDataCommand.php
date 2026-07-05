@@ -203,6 +203,14 @@ class ImportProductionDataCommand extends Command
             foreach ($whCities as $r) {
                 $cityIds[] = (int) $r['city_id'];
             }
+            // Collect city_ids from order address snapshots (needed to compose "street, city" order addresses)
+            $orderCities = $legacy->fetchAllAssociative(
+                'SELECT DISTINCT account_shipping_city_id AS city_id FROM order_entity WHERE account_shipping_city_id IS NOT NULL AND account_shipping_city_id > 0
+                 UNION SELECT DISTINCT account_billing_city_id FROM order_entity WHERE account_billing_city_id IS NOT NULL AND account_billing_city_id > 0'
+            );
+            foreach ($orderCities as $r) {
+                $cityIds[] = (int) $r['city_id'];
+            }
             $cityIds = array_unique($cityIds);
 
             if (!empty($cityIds)) {
@@ -1331,6 +1339,23 @@ class ImportProductionDataCommand extends Command
         $rows = [];
         $skippedNoUser = 0;
 
+        // DHL shipment tracking numbers live in dhl_parcel_entity (order_id → tracking number)
+        $trackingMap = [];
+        try {
+            $parcels = $legacy->fetchAllAssociative(
+                "SELECT order_id, shipment_tracking_number FROM dhl_parcel_entity
+                 WHERE (entity_state_id = 1 OR entity_state_id IS NULL)
+                   AND shipment_tracking_number IS NOT NULL AND shipment_tracking_number <> ''
+                   AND order_id IS NOT NULL"
+            );
+            foreach ($parcels as $p) {
+                $trackingMap[(int) $p['order_id']] = $p['shipment_tracking_number'];
+            }
+            $this->io->writeln(sprintf('  DHL tracking numbers found: %d', count($trackingMap)));
+        } catch (\Exception $e) {
+            $this->io->note('dhl_parcel_entity not found in production, orders imported without tracking');
+        }
+
         foreach ($source as $row) {
             // Orders have account_id, not user_id — map via accountUserMap
             $accountId = isset($row['account_id']) ? (int) $row['account_id'] : null;
@@ -1347,8 +1372,23 @@ class ImportProductionDataCommand extends Command
                 $status = $this->orderStateMap[(int) $row['order_state_id']] ?? 'pending';
             }
 
+            // Compose "street, city" — the app's canonical order-address format;
+            // the admin UI matches order addresses against client addresses by street AND city
             $shippingAddr = $row['account_shipping_street'] ?? null;
+            $shipCity = !empty($row['account_shipping_city_id'])
+                ? ($this->cityMap[(int) $row['account_shipping_city_id']]['name'] ?? null)
+                : null;
+            if ($shippingAddr && $shipCity) {
+                $shippingAddr .= ', ' . $shipCity;
+            }
+
             $billingAddr = $row['account_billing_street'] ?? null;
+            $billCity = !empty($row['account_billing_city_id'])
+                ? ($this->cityMap[(int) $row['account_billing_city_id']]['name'] ?? null)
+                : null;
+            if ($billingAddr && $billCity) {
+                $billingAddr .= ', ' . $billCity;
+            }
 
             // Snapshot address FK — only keep it if that address was actually imported
             // (legacy may reference inactive addresses that were filtered out)
@@ -1373,9 +1413,11 @@ class ImportProductionDataCommand extends Command
                 'shipping_address' => $shippingAddr,
                 'billing_address' => $billingAddr,
                 'is_draft' => (int) ($status === 'draft'),
-                'tracking_number' => null,
-                'tracking_carrier' => null,
-                'tracking_url' => null,
+                'tracking_number' => $trackingMap[(int) $row['id']] ?? null,
+                'tracking_carrier' => isset($trackingMap[(int) $row['id']]) ? 'dhl' : null,
+                'tracking_url' => isset($trackingMap[(int) $row['id']])
+                    ? 'https://www.dhl.com/en/express/tracking.html?AWB=' . $trackingMap[(int) $row['id']]
+                    : null,
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];

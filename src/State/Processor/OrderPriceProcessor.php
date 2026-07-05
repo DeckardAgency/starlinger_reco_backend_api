@@ -139,6 +139,21 @@ final class OrderPriceProcessor implements ProcessorInterface
             'total_amount' => $data->getTotalAmount()
         ]);
 
+        // Tracking carrier/URL follow the tracking number automatically — on every
+        // save, not just the dispatch transition — so tracking still works when the
+        // number is entered after the order was already marked shipped.
+        if (!empty($data->getTrackingNumber())) {
+            if (empty($data->getTrackingCarrier()) && $data->getDeliveryType()?->getCarrierCode()) {
+                $data->setTrackingCarrier($data->getDeliveryType()->getCarrierCode());
+            }
+            if (empty($data->getTrackingUrl())) {
+                $generatedUrl = $data->generateTrackingUrl();
+                if ($generatedUrl) {
+                    $data->setTrackingUrl($generatedUrl);
+                }
+            }
+        }
+
         // Handle workflow transitions for status changes
         if ($originalOrder && !$isNewOrder) {
             $oldStatus = $originalOrder['status'] ?? null;
@@ -156,6 +171,9 @@ final class OrderPriceProcessor implements ProcessorInterface
 
             $this->handleWorkflowTransition($data, $originalOrder);
         }
+
+        // Purchase limit enforcement + client spending ledger (amountSpent).
+        $this->enforcePurchaseLimitAndTrackSpending($data, $originalOrder, $isNewOrder, $isDraftSubmission);
 
         // Process with the standard persist processor
         $result = $this->persistProcessor->process($data, $operation, $uriVariables, $context);
@@ -402,6 +420,73 @@ final class OrderPriceProcessor implements ProcessorInterface
     }
 
     /**
+     * Client purchase limit + spending ledger.
+     *
+     * On submission (draft becomes a real order, or an order is created directly),
+     * the order total is checked against the client's purchase limit (cumulative:
+     * amountSpent + this order) and then added to amountSpent. Orders that are
+     * canceled or reversed credit their total back. Admins may exceed the limit
+     * (logged); customers get a clear rejection.
+     */
+    private function enforcePurchaseLimitAndTrackSpending(
+        Order $order,
+        ?array $originalOrder,
+        bool $isNewOrder,
+        bool $isDraftSubmission
+    ): void {
+        $client = $order->getUser()?->getClient();
+        if (!$client) {
+            return;
+        }
+
+        $oldStatus = $originalOrder['status'] ?? null;
+        $newStatus = $order->getStatus();
+        $finalStates = [Order::STATUS_CANCELED, Order::STATUS_REVERSAL];
+
+        $isSubmission = $isDraftSubmission
+            || ($isNewOrder && !$order->isDraft())
+            || (!$isNewOrder && $oldStatus === Order::STATUS_DRAFT
+                && !in_array($newStatus, array_merge($finalStates, [Order::STATUS_DRAFT]), true));
+
+        if ($isSubmission) {
+            $limit = (float) ($client->getPurchaseLimit() ?? 0);
+            $spent = (float) ($client->getAmountSpent() ?? 0);
+            $total = $order->getTotalAmount();
+
+            if ($limit > 0 && ($spent + $total) > $limit) {
+                if (!$this->security->isGranted('ROLE_ADMIN')) {
+                    throw new BadRequestHttpException(sprintf(
+                        'This order (€%.2f) would exceed your purchase limit of €%.2f (already spent: €%.2f). Please contact Starlinger.',
+                        $total,
+                        $limit,
+                        $spent
+                    ));
+                }
+                $this->logger->warning('Purchase limit exceeded by admin-placed order', [
+                    'order_id' => $order->getId(),
+                    'client_id' => $client->getId(),
+                    'limit' => $limit,
+                    'spent' => $spent,
+                    'order_total' => $total,
+                ]);
+            }
+
+            $client->setAmountSpent(number_format($spent + $total, 2, '.', ''));
+            return;
+        }
+
+        // Canceling/reversing an active order credits its total back to the client.
+        if (!$isNewOrder && $oldStatus !== null
+            && $oldStatus !== Order::STATUS_DRAFT
+            && !in_array($oldStatus, $finalStates, true)
+            && in_array($newStatus, $finalStates, true)
+        ) {
+            $spent = (float) ($client->getAmountSpent() ?? 0);
+            $client->setAmountSpent(number_format(max(0, $spent - $order->getTotalAmount()), 2, '.', ''));
+        }
+    }
+
+    /**
      * Handle workflow transitions when status changes
      */
     private function handleWorkflowTransition(Order $order, array $originalOrder): void
@@ -467,6 +552,26 @@ final class OrderPriceProcessor implements ProcessorInterface
                     'old_status' => $oldStatus,
                     'new_status' => $newStatus
                 ]);
+
+                // Workflow transitions notify via OrderWorkflowSubscriber; a force-set
+                // bypasses the workflow, so dispatch the status-change message (and its
+                // emails) here — otherwise admin status jumps notify nobody.
+                $message = new OrderStatusChangedMessage(
+                    (int) $order->getId(),
+                    (string) $oldStatus,
+                    (string) $newStatus
+                );
+                $currentUser = $this->security->getUser();
+                if ($currentUser instanceof User) {
+                    $message->setModifiedBy([
+                        'id' => $currentUser->getId(),
+                        'email' => $currentUser->getEmail(),
+                        'fullName' => $currentUser->getFullName(),
+                        'firstName' => $currentUser->getFirstName(),
+                        'lastName' => $currentUser->getLastName(),
+                    ]);
+                }
+                $this->messageBus->dispatch($message);
             }
         } catch (TransitionException $e) {
             $this->logger->error('Workflow transition failed', [
@@ -526,9 +631,21 @@ final class OrderPriceProcessor implements ProcessorInterface
      */
     private function validateAndSetDispatchedFields(Order $order, ?User $authenticatedUser): void
     {
-        // Validate required tracking fields
+        // Shipping without a tracking number is allowed (pickup, hand delivery,
+        // label arrives later) but logged: the parcel can't be tracked via DHL
+        // and the customer gets no carrier updates until a number is added.
         if (empty($order->getTrackingNumber())) {
-            throw new BadRequestHttpException('Tracking number is required when dispatching an order.');
+            $this->logger->warning('Order dispatched without tracking number', [
+                'order_id' => $order->getId(),
+                'order_number' => $order->getOrderNumber(),
+                'dispatched_by' => $authenticatedUser?->getEmail(),
+            ]);
+
+            $order->setDispatchedAt(new \DateTime());
+            if ($authenticatedUser instanceof User) {
+                $order->setDispatchedBy($authenticatedUser);
+            }
+            return;
         }
 
         // Auto-fill carrier from delivery type if not explicitly set

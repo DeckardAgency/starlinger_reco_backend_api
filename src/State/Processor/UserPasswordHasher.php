@@ -5,9 +5,11 @@ namespace App\State\Processor;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
 use App\Entity\User;
+use App\Message\UserAccountCreatedMessage;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 /**
@@ -19,7 +21,8 @@ final  class UserPasswordHasher implements ProcessorInterface
         private readonly ProcessorInterface $processor,
         private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly Security $security,
-        private readonly EntityManagerInterface $entityManager
+        private readonly EntityManagerInterface $entityManager,
+        private readonly MessageBusInterface $messageBus
     )
     {
     }
@@ -43,7 +46,17 @@ final  class UserPasswordHasher implements ProcessorInterface
         $data->setPassword($hashedPassword);
         $data->eraseCredentials();
 
-        return $this->processor->process($data, $operation, $uriVariables, $context);
+        $isNewUser = $data->getId() === null;
+
+        $result = $this->processor->process($data, $operation, $uriVariables, $context);
+
+        // Direct creation by an admin (password set, no invitation flow): let the
+        // user know their account exists. Invited users get the invitation email.
+        if ($isNewUser && $result->getId() !== null) {
+            $this->messageBus->dispatch(new UserAccountCreatedMessage((int) $result->getId()));
+        }
+
+        return $result;
     }
 
     /**

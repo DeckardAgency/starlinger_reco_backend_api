@@ -143,7 +143,7 @@
             {% elseif status == 'canceled' %}
                 Your order has been canceled
             {% else %}
-                Your order status has been updated to: {{ status }}
+                Your order status has been updated to: {{ status|replace({'_': ' '})|title }}
             {% endif %}
         </div>
 

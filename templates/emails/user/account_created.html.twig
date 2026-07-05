@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Starlinger RECO account has been created</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            background-color: #18181b;
+            color: #ffffff;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .greeting {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .message {
+            margin-bottom: 30px;
+            color: #555;
+        }
+        .cta-button {
+            display: inline-block;
+            padding: 15px 40px;
+            background-color: #dc2626;
+            color: #ffffff !important;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .info-box {
+            background-color: #f8f9fa;
+            border-left: 4px solid #dc2626;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+<div class="email-container">
+    <div class="header">
+        <h1>Starlinger RECO</h1>
+    </div>
+
+    <div class="content">
+        <div class="greeting">
+            Hello {{ user.firstName }} {{ user.lastName }},
+        </div>
+
+        <div class="message">
+            <p>An account has been created for you in the <strong>Starlinger RECO webshop</strong>.</p>
+            <p>You can now browse the spare parts catalogue, place orders and follow your shipments online.</p>
+        </div>
+
+        <div class="info-box">
+            <strong>Your login details:</strong><br>
+            Email: {{ user.email }}<br>
+            Password: provided to you by your administrator
+        </div>
+
+        <div style="text-align: center;">
+            <a href="{{ loginUrl }}" class="cta-button">Log in to the webshop</a>
+        </div>
+
+        <div class="message">
+            <p>If you did not receive a password or want to choose your own, use
+                <em>Reset password</em> on the login page.</p>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>This is an automated message from Starlinger RECO. Please do not reply to this email.</p>
+    </div>
+</div>
+</body>
+</html>

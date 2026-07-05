@@ -47,6 +47,12 @@ services:
             $senderName: 'Starlinger RECO'
             $twig: '@twig'
 
+    App\MessageHandler\UserAccountCreatedMessageHandler:
+        arguments:
+            $clientAppUrl: '%app.client_url%'
+            $senderEmail: '%env(ORDER_SENDER_EMAIL)%'
+            $senderName: 'Starlinger RECO'
+
     # Invitation processors
     App\State\Processor\InvitationCreatedProcessor:
         arguments:
