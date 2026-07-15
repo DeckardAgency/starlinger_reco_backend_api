@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# Reject accidental commits of database dumps / files containing credential data.
+# Enable once per clone:  git config core.hooksPath .githooks
+#
+# Blocks:
+#   1. Files whose name looks like a DB dump (*dump*.sql, *-full-dump.sql, *.dump.sql)
+#   2. Any staged text file containing "INSERT INTO" together with a bcrypt/argon hash
+#      ($2y$/$2a$/$2b$/$argon2) — i.e. real user/credential rows, regardless of name.
+
+fail=0
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+for f in $staged; do
+    # The hooks themselves document these patterns as examples — never scan them.
+    case "$f" in
+        .githooks/*) continue ;;
+    esac
+
+    # 1. Filename-based block
+    case "$f" in
+        *dump*.sql|*-full-dump.sql|*.dump.sql)
+            echo "BLOCKED: '$f' looks like a database dump. DB dumps must never be committed."
+            fail=1
+            continue
+            ;;
+    esac
+
+    # 2. Content-based block (skip binary / missing files)
+    [ -f "$f" ] || continue
+    if git grep -I -q -e "INSERT INTO" --cached -- "$f" 2>/dev/null; then
+        if git show ":$f" 2>/dev/null | grep -Eq '\$(2[aby]|argon2)'; then
+            echo "BLOCKED: '$f' contains INSERT INTO plus password hashes — looks like a data dump."
+            fail=1
+        fi
+    fi
+done
+
+if [ "$fail" -ne 0 ]; then
+    echo ""
+    echo "Commit rejected. Keep only reviewed, data-free schema patches under resources/db-patches/."
+    echo "If this is a false positive, review carefully, then: git commit --no-verify"
+    exit 1
+fi
+
+exit 0
