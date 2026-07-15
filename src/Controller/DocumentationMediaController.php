@@ -62,12 +62,14 @@ class DocumentationMediaController extends AbstractController
         $finfo = new \finfo(FILEINFO_MIME_TYPE);
         $detectedMimeType = $finfo->file($uploadedFile->getPathname());
 
+        // SVG is intentionally excluded: it can carry inline <script>, and these
+        // files are served from the public docroot, so an admin uploading a crafted
+        // SVG would be a stored-XSS vector on the app origin.
         $allowedMimeTypes = [
             'image/jpeg',
             'image/png',
             'image/gif',
             'image/webp',
-            'image/svg+xml',
         ];
 
         if (!in_array($detectedMimeType, $allowedMimeTypes, true)) {
@@ -100,7 +102,9 @@ class DocumentationMediaController extends AbstractController
         $originalFilename = pathinfo($uploadedFile->getClientOriginalName(), PATHINFO_FILENAME);
         $safeFilename = $this->slugger->slug($originalFilename);
         $extension = $uploadedFile->guessExtension() ?? 'bin';
-        $newFilename = sprintf('%s-%s.%s', $safeFilename, uniqid(), $extension);
+        // Cryptographically-random suffix (not uniqid(), which is time-based and
+        // predictable): these files are served from the public docroot.
+        $newFilename = sprintf('%s-%s.%s', $safeFilename, bin2hex(random_bytes(16)), $extension);
 
         // Move file to permanent location
         try {

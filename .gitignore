@@ -19,5 +19,10 @@
 /.phpunit.cache/
 ###< phpunit/phpunit ###
 
-
 .env
+
+# Database dumps must never be committed — they contain credential hashes,
+# refresh tokens and PII. Keep only reviewed, data-free schema patches.
+/resources/db-patches/*-full-dump.sql
+/resources/db-patches/*dump*.sql
+*.dump.sql

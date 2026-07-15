@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\User;
 use App\Repository\UserInvitationRepository;
 use App\Repository\UserRepository;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -72,7 +73,8 @@ class UserInvitationController extends AbstractController
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        // Same password policy as the reset-password endpoint.
+        // Same password policy as the reset-password endpoint
+        // (PasswordResetService::validatePassword): length + complexity.
         $violations = $this->validator->validate((string) $data['password'], [
             new Assert\NotBlank(['message' => 'Password cannot be blank']),
             new Assert\Length([
@@ -80,6 +82,18 @@ class UserInvitationController extends AbstractController
                 'minMessage' => 'Password must be at least {{ limit }} characters',
                 'max' => 100,
                 'maxMessage' => 'Password cannot be longer than {{ limit }} characters',
+            ]),
+            new Assert\Regex([
+                'pattern' => '/[A-Z]/',
+                'message' => 'Password must contain at least one uppercase letter.',
+            ]),
+            new Assert\Regex([
+                'pattern' => '/[a-z]/',
+                'message' => 'Password must contain at least one lowercase letter.',
+            ]),
+            new Assert\Regex([
+                'pattern' => '/[0-9]/',
+                'message' => 'Password must contain at least one number.',
             ]),
         ]);
         if (count($violations) > 0) {
@@ -114,8 +128,18 @@ class UserInvitationController extends AbstractController
 
         $invitation->markAsCompleted();
 
-        $this->entityManager->persist($user);
-        $this->entityManager->flush();
+        try {
+            $this->entityManager->persist($user);
+            $this->entityManager->flush();
+        } catch (UniqueConstraintViolationException $e) {
+            // Concurrent double-submit of the same token: the unique constraint on
+            // user.email serializes the two requests — the loser lands here. Return
+            // a clean 409 instead of an unhandled 500. (The winner already created
+            // the account and marked the invitation completed.)
+            return $this->json([
+                'error' => 'An account with this email already exists. Please log in or reset your password.',
+            ], Response::HTTP_CONFLICT);
+        }
 
         $this->logger->info('User invitation completed', [
             'invitation_id' => $invitation->getId(),

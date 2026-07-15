@@ -24,14 +24,19 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiResource(
     operations: [
         new GetCollection(
-            normalizationContext: ['groups' => ['country:read']]
+            normalizationContext: ['groups' => ['country:read']],
+            // Effectively-static master data: let the browser cache it for 1h.
+            // max_age only (private cache) — never shared_max_age, since responses
+            // are credentialed and must not be cached by a shared proxy/CDN.
+            cacheHeaders: ['max_age' => 3600]
         ),
         new Post(
             normalizationContext: ['groups' => ['country:read']],
             denormalizationContext: ['groups' => ['country:write']]
         ),
         new Get(
-            normalizationContext: ['groups' => ['country:read']]
+            normalizationContext: ['groups' => ['country:read']],
+            cacheHeaders: ['max_age' => 3600]
         ),
         new Put(
             normalizationContext: ['groups' => ['country:read']],

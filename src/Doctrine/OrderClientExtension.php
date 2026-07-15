@@ -10,13 +10,16 @@ use App\Entity\Order;
 use App\Entity\OrderInfoMessage;
 use App\Entity\OrderInfoRequest;
 use App\Entity\OrderItem;
+use App\Entity\OrderLog;
+use App\Entity\TrackingEvent;
 use App\Entity\User;
 use Doctrine\ORM\QueryBuilder;
 use Symfony\Bundle\SecurityBundle\Security;
 
 /**
  * Scopes the Order family of resources (Order, OrderItem, OrderInfoRequest,
- * OrderInfoMessage) to the authenticated user's client, so a non-admin can only
+ * OrderInfoMessage, OrderLog, TrackingEvent) to the authenticated user's client,
+ * so a non-admin can only
  * read/modify rows belonging to their own client. Item operations are scoped too,
  * so GET/PUT/PATCH/DELETE on another client's row yields a 404.
  *
@@ -92,6 +95,18 @@ final class OrderClientExtension implements QueryCollectionExtensionInterface, Q
                 $queryBuilder
                     ->join(sprintf('%s.infoRequest', $rootAlias), 'oce_ir')
                     ->join('oce_ir.order', 'oce_o')
+                    ->join('oce_o.user', $userAlias);
+                break;
+
+            case OrderLog::class:
+                $queryBuilder
+                    ->join(sprintf('%s.order', $rootAlias), 'oce_o')
+                    ->join('oce_o.user', $userAlias);
+                break;
+
+            case TrackingEvent::class:
+                $queryBuilder
+                    ->join(sprintf('%s.orderRef', $rootAlias), 'oce_o')
                     ->join('oce_o.user', $userAlias);
                 break;
 

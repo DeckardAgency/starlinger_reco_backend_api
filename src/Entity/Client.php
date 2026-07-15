@@ -35,6 +35,7 @@ use Symfony\Component\Validator\Constraints as Assert;
             denormalizationContext: ['groups' => ['client:write']]
         ),
         new Get(
+            security: "is_granted('ROLE_ADMIN') or object == user.getClient()",
             normalizationContext: ['groups' => ['client:read', 'client:read:details']]
         ),
         new Put(

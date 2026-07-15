@@ -27,7 +27,8 @@ class OrderCreatedMessageHandler
         private readonly OrderLogService $orderLogService,
         private readonly EntityManagerInterface $entityManager,
         private readonly string $adminEmail = 'admin@example.com',
-        private readonly string $senderEmail = 'noreply@example.com'
+        private readonly string $senderEmail = 'noreply@example.com',
+        private readonly string $clientAppUrl = 'http://localhost:4200'
     ) {
     }
 
@@ -67,6 +68,21 @@ class OrderCreatedMessageHandler
                     'order_id' => $orderId
                 ]);
                 return;
+            }
+
+            // Idempotency guard: the submission log (draft -> new) is written by this
+            // handler before the emails go out and by nothing else, so its presence
+            // means this message was already processed. On a messenger retry (e.g. a
+            // later flush failed) skipping here prevents duplicate confirmation emails
+            // and duplicate order logs.
+            foreach ($this->orderLogService->getOrderHistory($order) as $existingLog) {
+                if ($existingLog->getPreviousStatus() === Order::STATUS_DRAFT
+                    && $existingLog->getNewStatus() === Order::STATUS_NEW) {
+                    $this->logger->info('OrderCreatedMessage already processed; skipping to stay idempotent', [
+                        'order_id' => $orderId,
+                    ]);
+                    return;
+                }
             }
 
             // Create description with user information
@@ -319,13 +335,11 @@ class OrderCreatedMessageHandler
      */
     private function getBaseUrl(): string
     {
-        if (isset($_SERVER['HTTP_HOST'])) {
-            $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https://' : 'http://';
-            return $protocol . $_SERVER['HTTP_HOST'];
-        }
-
-        // Fallback - should be configured in environment variables
-        return $_ENV['APP_BASE_URL'] ?? 'https://example.com';
+        // Use the configured customer-app URL. Do NOT derive from $_SERVER['HTTP_HOST']:
+        // this runs in the async worker (no HTTP_HOST -> the old code fell back to
+        // example.com), and reading HTTP_HOST would be host-header-poisonable if run
+        // synchronously.
+        return rtrim($this->clientAppUrl, '/');
     }
 
     /**

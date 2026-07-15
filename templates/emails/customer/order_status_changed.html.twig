@@ -214,11 +214,11 @@
         {% if status not in ['canceled', 'completed'] %}
             <p>You can track your order status anytime using the button below:</p>
             <p style="text-align: center;">
-                <a href="{{ base_url }}/account/orders/{{ order.id }}" class="button">Track Your Order</a>
+                <a href="{{ base_url }}/customer/orders/{{ order.id }}" class="button">Track Your Order</a>
             </p>
         {% elseif status == 'completed' %}
             <p style="text-align: center;">
-                <a href="{{ base_url }}/account/orders" class="button">View All Orders</a>
+                <a href="{{ base_url }}/customer/orders" class="button">View All Orders</a>
             </p>
         {% endif %}
 

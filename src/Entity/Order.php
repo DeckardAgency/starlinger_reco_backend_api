@@ -28,6 +28,7 @@ use Doctrine\ORM\Mapping as ORM;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Serializer\Annotation\SerializedName;
+use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Entity(repositoryClass: OrderRepository::class)]
 #[ORM\Table(name: '`order`')]
 #[ORM\Index(name: "idx_order_status", columns: ["status"])]
@@ -175,6 +176,27 @@ class Order
     public const STATUS_READY_FOR_SHIPMENT = 'ready_for_shipment';
     public const STATUS_SHIPPED = 'shipped';
 
+    /**
+     * All valid order statuses. Used by the Assert\Choice on $status so a client
+     * can never persist an arbitrary/garbage status string.
+     *
+     * @return string[]
+     */
+    public static function getValidStatuses(): array
+    {
+        return [
+            self::STATUS_DRAFT,
+            self::STATUS_NEW,
+            self::STATUS_IN_PROCESS,
+            self::STATUS_DELIVERED,
+            self::STATUS_CANCELED,
+            self::STATUS_REVERSAL,
+            self::STATUS_WAITING_FOR_PAYMENT,
+            self::STATUS_READY_FOR_SHIPMENT,
+            self::STATUS_SHIPPED,
+        ];
+    }
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column(type: 'integer')]
@@ -187,6 +209,7 @@ class Order
 
     #[ORM\Column(length: 50)]
     #[Groups(['order:read', 'order:write'])]
+    #[Assert\Choice(callback: 'getValidStatuses', message: 'Invalid order status.')]
     private string $status = self::STATUS_DRAFT;
 
     #[ORM\Column(type: "float")]

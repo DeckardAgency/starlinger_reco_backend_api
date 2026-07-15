@@ -60,7 +60,7 @@
                 {% endfor %}
             </div>
 
-            <p>You can view the full order details and track its progress in your account here: <a href="{{ base_url }}/orders/{{ order.id }}">Link to Order Details</a></p>
+            <p>You can view the full order details and track its progress in your account here: <a href="{{ base_url }}/customer/orders/{{ order.id }}">Link to Order Details</a></p>
 
             <p>We will keep you updated on the status of your order. If you have any questions, please don't hesitate to contact our support team at <a href="mailto:{{ supportEmail ?? 'support@starlinger.com' }}">{{ supportEmail ?? 'support@starlinger.com' }}</a> or call us at {{ supportPhone ?? '+43 1 234 5678' }}.</p>
 

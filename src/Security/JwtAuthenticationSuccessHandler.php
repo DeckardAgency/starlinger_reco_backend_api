@@ -29,8 +29,12 @@ class JwtAuthenticationSuccessHandler extends BaseHandler
             $data['user'] = $this->getUserData($user);
         }
 
-        // Return a new response with user data added
-        return new JsonResponse($data);
+        // Mutate the parent response in place instead of building a fresh one:
+        // lexik attaches the BEARER auth cookie (Set-Cookie) to this response, and
+        // returning a new JsonResponse would discard those headers/cookies.
+        $response->setData($data);
+
+        return $response;
     }
 
     private function getUserData(UserInterface $user): array

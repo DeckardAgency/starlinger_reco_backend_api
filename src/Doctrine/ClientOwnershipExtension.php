@@ -7,9 +7,11 @@ use ApiPlatform\Doctrine\Orm\Extension\QueryItemExtensionInterface;
 use ApiPlatform\Doctrine\Orm\Util\QueryNameGeneratorInterface;
 use ApiPlatform\Metadata\Operation;
 use App\Entity\Address;
+use App\Entity\Client;
 use App\Entity\ClientProductPrice;
 use App\Entity\SupportTicket;
 use App\Entity\User;
+use App\Entity\UserInvitation;
 use Doctrine\ORM\QueryBuilder;
 use Symfony\Bundle\SecurityBundle\Security;
 
@@ -32,7 +34,7 @@ final class ClientOwnershipExtension implements QueryCollectionExtensionInterfac
         ?Operation $operation = null,
         array $context = []
     ): void {
-        $this->addWhere($queryBuilder, $resourceClass);
+        $this->addWhere($queryBuilder, $resourceClass, true);
     }
 
     public function applyToItem(
@@ -43,10 +45,10 @@ final class ClientOwnershipExtension implements QueryCollectionExtensionInterfac
         ?Operation $operation = null,
         array $context = []
     ): void {
-        $this->addWhere($queryBuilder, $resourceClass);
+        $this->addWhere($queryBuilder, $resourceClass, false);
     }
 
-    private function addWhere(QueryBuilder $queryBuilder, string $resourceClass): void
+    private function addWhere(QueryBuilder $queryBuilder, string $resourceClass, bool $isCollection): void
     {
         $user = $this->security->getUser();
         if (!$user instanceof User) {
@@ -65,13 +67,36 @@ final class ClientOwnershipExtension implements QueryCollectionExtensionInterfac
             case Address::class:
             case ClientProductPrice::class:
             case User::class:
-                // Direct client relation.
+            case UserInvitation::class:
+                // Direct client relation. A client-admin sees only their own
+                // client's invitations; the GetCollection/Get security
+                // expression already blocks plain ROLE_CLIENT/ROLE_USER.
                 if ($clientId === null) {
                     $queryBuilder->andWhere('1 = 0');
                     return;
                 }
                 $queryBuilder
                     ->andWhere(sprintf('IDENTITY(%s.client) = :co_client_id', $alias))
+                    ->setParameter('co_client_id', $clientId);
+                break;
+
+            case Client::class:
+                // Scope the COLLECTION only, to the caller's own client row.
+                // Item queries are intentionally left unscoped here and gated by
+                // the Get operation's `security` expression instead: agent
+                // "order on behalf of" resolves managed-client IRIs through the
+                // item provider (which runs these extensions but NOT operation
+                // security), so scoping items would break that third-party
+                // client-agent feature.
+                if (!$isCollection) {
+                    return;
+                }
+                if ($clientId === null) {
+                    $queryBuilder->andWhere('1 = 0');
+                    return;
+                }
+                $queryBuilder
+                    ->andWhere(sprintf('%s.id = :co_client_id', $alias))
                     ->setParameter('co_client_id', $clientId);
                 break;
 

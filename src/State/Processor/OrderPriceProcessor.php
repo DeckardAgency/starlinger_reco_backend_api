@@ -106,6 +106,11 @@ final class OrderPriceProcessor implements ProcessorInterface
                 if ($authUser instanceof User) {
                     $data->setUser($authUser);
                 }
+                // A customer may only create a draft or a freshly-submitted order.
+                // Never trust a client-supplied status on create: an arbitrary
+                // downstream status (delivered/shipped/…) would skip the workflow,
+                // payment states and notifications while still debiting the limit.
+                $data->setStatus($data->isDraft() ? Order::STATUS_DRAFT : Order::STATUS_NEW);
             } elseif ($data->getUser() === null && $authUser instanceof User) {
                 $data->setUser($authUser);
             }
@@ -434,8 +439,12 @@ final class OrderPriceProcessor implements ProcessorInterface
         bool $isNewOrder,
         bool $isDraftSubmission
     ): void {
-        $client = $order->getUser()?->getClient();
-        if (!$client) {
+        // Resolve which client(s) this order's spend is charged to. For an agent
+        // "on behalf of" order the spend belongs to the MANAGED client(s), matching
+        // how pricing resolves the order client (getOnBehalfOfClient ?? user client).
+        // Mixed-client carts (per-item onBehalfOfClient) are split per client.
+        $amountsByClient = $this->resolveClientAmounts($order);
+        if (empty($amountsByClient)) {
             return;
         }
 
@@ -449,41 +458,145 @@ final class OrderPriceProcessor implements ProcessorInterface
                 && !in_array($newStatus, array_merge($finalStates, [Order::STATUS_DRAFT]), true));
 
         if ($isSubmission) {
-            $limit = (float) ($client->getPurchaseLimit() ?? 0);
-            $spent = (float) ($client->getAmountSpent() ?? 0);
-            $total = $order->getTotalAmount();
-
-            if ($limit > 0 && ($spent + $total) > $limit) {
-                if (!$this->security->isGranted('ROLE_ADMIN')) {
-                    throw new BadRequestHttpException(sprintf(
-                        'This order (€%.2f) would exceed your purchase limit of €%.2f (already spent: €%.2f). Please contact Starlinger.',
-                        $total,
-                        $limit,
-                        $spent
-                    ));
-                }
-                $this->logger->warning('Purchase limit exceeded by admin-placed order', [
-                    'order_id' => $order->getId(),
-                    'client_id' => $client->getId(),
-                    'limit' => $limit,
-                    'spent' => $spent,
-                    'order_total' => $total,
-                ]);
-            }
-
-            $client->setAmountSpent(number_format($spent + $total, 2, '.', ''));
+            $this->debitPurchaseLimits($amountsByClient, $order);
             return;
         }
 
-        // Canceling/reversing an active order credits its total back to the client.
+        // Canceling/reversing an active order credits each client's portion back.
         if (!$isNewOrder && $oldStatus !== null
             && $oldStatus !== Order::STATUS_DRAFT
             && !in_array($oldStatus, $finalStates, true)
             && in_array($newStatus, $finalStates, true)
         ) {
-            $spent = (float) ($client->getAmountSpent() ?? 0);
-            $client->setAmountSpent(number_format(max(0, $spent - $order->getTotalAmount()), 2, '.', ''));
+            foreach ($amountsByClient as $entry) {
+                $this->creditSpending($entry['client'], $entry['amount']);
+            }
         }
+    }
+
+    /**
+     * Split the order total across the client(s) it is placed for, keyed by client id.
+     * Each item's subtotal is attributed to its effective client (per-item
+     * onBehalfOfClient, else the order-level onBehalfOfClient, else the placing
+     * user's client). The per-client amounts sum to the order total (which is
+     * sum(item.subtotal)), so this is consistent with the limit check.
+     *
+     * @return array<int, array{client: \App\Entity\Client, amount: float}>
+     */
+    private function resolveClientAmounts(Order $order): array
+    {
+        $orderClient = $order->getOnBehalfOfClient() ?? $order->getUser()?->getClient();
+
+        $amounts = [];
+        foreach ($order->getItems() as $item) {
+            $itemClient = $item->getOnBehalfOfClient() ?? $orderClient;
+            if ($itemClient === null) {
+                continue;
+            }
+            $clientId = $itemClient->getId();
+            if (!isset($amounts[$clientId])) {
+                $amounts[$clientId] = ['client' => $itemClient, 'amount' => 0.0];
+            }
+            $amounts[$clientId]['amount'] += (float) $item->getSubtotal();
+        }
+
+        return $amounts;
+    }
+
+    /**
+     * Atomically enforce each client's purchase limit and debit the spending ledger.
+     *
+     * All per-client debits run in ONE transaction: if any client would exceed its
+     * limit the whole order is rejected and every debit rolls back, so a mixed-client
+     * order never leaves some clients charged and others not. Each debit is a single
+     * conditional UPDATE, so concurrent submissions for the same client can't both
+     * pass the limit (the row update is serialized). Debits commit before the order is
+     * persisted; a subsequent persist failure would leave a small over-count, which is
+     * far rarer and more recoverable than concurrent overspend.
+     *
+     * @param array<int, array{client: \App\Entity\Client, amount: float}> $amountsByClient
+     */
+    private function debitPurchaseLimits(array $amountsByClient, Order $order): void
+    {
+        $toCharge = array_filter($amountsByClient, static fn (array $e): bool => $e['amount'] > 0);
+        if (empty($toCharge)) {
+            return; // Nothing to charge; always within limit.
+        }
+
+        $isAdmin = $this->security->isGranted('ROLE_ADMIN');
+        $conn = $this->entityManager->getConnection();
+
+        $conn->transactional(function ($conn) use ($toCharge, $isAdmin, $order): void {
+            foreach ($toCharge as $entry) {
+                /** @var \App\Entity\Client $client */
+                $client = $entry['client'];
+                $amount = $entry['amount'];
+                $clientId = $client->getId();
+
+                if ($isAdmin) {
+                    // Admins may exceed the limit; still update the ledger atomically.
+                    // COALESCE so a NULL amount_spent (fresh client) starts from 0.
+                    $conn->executeStatement(
+                        'UPDATE client SET amount_spent = COALESCE(amount_spent, 0) + :inc WHERE id = :id',
+                        ['inc' => $amount, 'id' => $clientId]
+                    );
+                    $limit = (float) ($client->getPurchaseLimit() ?? 0);
+                    $spent = (float) ($client->getAmountSpent() ?? 0);
+                    if ($limit > 0 && ($spent + $amount) > $limit) {
+                        $this->logger->warning('Purchase limit exceeded by admin-placed order', [
+                            'order_id' => $order->getId(),
+                            'client_id' => $clientId,
+                            'limit' => $limit,
+                            'spent' => $spent,
+                            'amount' => $amount,
+                        ]);
+                    }
+                    continue;
+                }
+
+                // Race-free check-and-debit: only updates if this client stays within
+                // its limit (NULL/0 purchase_limit means unlimited). A 0-row result
+                // means the limit would be exceeded -> throw, rolling back the whole tx.
+                $affected = (int) $conn->executeStatement(
+                    'UPDATE client SET amount_spent = COALESCE(amount_spent, 0) + :inc
+                     WHERE id = :id
+                       AND (purchase_limit IS NULL OR purchase_limit = 0
+                            OR COALESCE(amount_spent, 0) + :chk <= purchase_limit)',
+                    ['inc' => $amount, 'chk' => $amount, 'id' => $clientId]
+                );
+                if ($affected === 0) {
+                    $limit = (float) ($client->getPurchaseLimit() ?? 0);
+                    $spent = (float) ($client->getAmountSpent() ?? 0);
+                    throw new BadRequestHttpException(sprintf(
+                        'This order (€%.2f for %s) would exceed that client\'s purchase limit of €%.2f (already spent: €%.2f). Please contact Starlinger.',
+                        $amount,
+                        $client->getName(),
+                        $limit,
+                        $spent
+                    ));
+                }
+            }
+        });
+
+        // Sync the in-memory entities with the committed DB values.
+        foreach ($toCharge as $entry) {
+            $this->entityManager->refresh($entry['client']);
+        }
+    }
+
+    /**
+     * Credit an amount back to a client's spending ledger (cancel/reversal), atomically.
+     */
+    private function creditSpending(\App\Entity\Client $client, float $amount): void
+    {
+        if ($amount <= 0) {
+            return;
+        }
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE client SET amount_spent = GREATEST(0, COALESCE(amount_spent, 0) - :dec) WHERE id = :id',
+            ['dec' => $amount, 'id' => $client->getId()]
+        );
+        $this->entityManager->refresh($client);
     }
 
     /**

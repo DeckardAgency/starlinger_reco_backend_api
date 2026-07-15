@@ -31,12 +31,14 @@ services:
         arguments:
             $adminEmail: '%env(ORDER_ADMIN_EMAIL)%'
             $senderEmail: '%env(ORDER_SENDER_EMAIL)%'
+            $clientAppUrl: '%app.client_url%'
             $twig: '@twig'
 
     App\MessageHandler\OrderStatusChangedMessageHandler:
         arguments:
             $adminEmail: '%env(ORDER_ADMIN_EMAIL)%'
             $senderEmail: '%env(ORDER_SENDER_EMAIL)%'
+            $clientAppUrl: '%app.client_url%'
             $twig: '@twig'
 
     # User invitation message handler
@@ -123,6 +125,13 @@ services:
         autoconfigure: true
         tags:
             - { name: 'api_platform.state_provider' }
+
+    # CSRF defence for cookie-auth writes — reuses the same allowed-origin
+    # regex as nelmio_cors so any origin the browser is allowed to call from
+    # already passes.
+    App\EventSubscriber\CsrfOriginSubscriber:
+        arguments:
+            $allowedOriginRegex: '%env(CORS_ALLOW_ORIGIN)%'
 
     # Rate limiting for login endpoint
     App\EventSubscriber\LoginRateLimitSubscriber:

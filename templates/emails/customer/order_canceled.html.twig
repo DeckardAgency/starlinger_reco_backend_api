@@ -46,7 +46,7 @@
 
             <p>If you cancelled this order yourself, no further action is required. If you did not initiate this cancellation, please contact our support team immediately at <a href="mailto:{{ supportEmail ?? 'support@starlinger.com' }}">{{ supportEmail ?? 'support@starlinger.com' }}</a>{% if supportPhone %} or {{ supportPhone }}{% endif %}.</p>
 
-            <p>You can view your order details here: <a href="{{ base_url }}/orders/{{ order.id }}">Link to Order Details</a></p>
+            <p>You can view your order details here: <a href="{{ base_url }}/customer/orders/{{ order.id }}">Link to Order Details</a></p>
 
             <p>If you have any questions or would like to place a new order, please feel free to contact us.</p>
 

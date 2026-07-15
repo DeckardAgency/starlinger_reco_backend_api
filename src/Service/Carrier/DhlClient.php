@@ -46,7 +46,11 @@ class DhlClient
                     'DHL-API-Key' => $this->apiKey,
                     'Accept' => 'application/json',
                 ],
-                'timeout' => 10,
+                // timeout = idle timeout between chunks; max_duration caps the total
+                // wall time so a hung DHL endpoint can't tie up a PHP-FPM worker
+                // (this call runs synchronously on the manual-refresh endpoint).
+                'timeout' => 8,
+                'max_duration' => 12,
             ]);
 
             $data = $response->toArray(false);

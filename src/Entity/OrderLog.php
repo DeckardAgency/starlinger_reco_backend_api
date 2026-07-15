@@ -25,7 +25,9 @@ use Gedmo\Mapping\Annotation as Gedmo;
             normalizationContext: ['groups' => ['order_log:read']]
         )
     ],
-//    security: "is_granted('ROLE_ADMIN') or (is_granted('ROLE_USER') and object.getOrder().getUser() == user)"
+    // Read access is scoped per-client (through order -> user -> client) by
+    // OrderClientExtension, matching the rest of the Order family. A non-admin
+    // gets only their client's logs; a cross-tenant item GET yields 404.
 )]
 class OrderLog
 {

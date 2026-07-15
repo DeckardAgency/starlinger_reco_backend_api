@@ -5,10 +5,6 @@ namespace App\Entity;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Get;
-use ApiPlatform\Metadata\Post;
-use ApiPlatform\Metadata\Put;
-use ApiPlatform\Metadata\Patch;
-use ApiPlatform\Metadata\Delete;
 use App\Repository\OrderItemRepository;
 use DateTimeInterface;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -18,6 +14,12 @@ use Symfony\Component\Serializer\Annotation\Groups;
 use Gedmo\Mapping\Annotation as Gedmo;
 use ApiPlatform\Metadata\ApiProperty;
 
+// OrderItem is read-only as a standalone resource. Line items are created and
+// modified ONLY as part of the Order write (nested `order:write`, which routes
+// through OrderPriceProcessor for pricing, total recalculation and purchase-limit
+// enforcement). Standalone item writes were removed because they used the default
+// persist processor — bypassing pricing (items persisted at price 0), leaving the
+// parent order's total stale, and allowing mutation of already-submitted orders.
 #[ORM\Entity(repositoryClass: OrderItemRepository::class)]
 #[ApiResource(
     operations: [
@@ -27,22 +29,6 @@ use ApiPlatform\Metadata\ApiProperty;
             paginationClientItemsPerPage: true,
             normalizationContext: ['groups' => ['order_item:read']]
         ),
-        new Post(
-            securityPostDenormalize: "is_granted('OWN_ORDER', object)",
-            normalizationContext: ['groups' => ['order_item:read']],
-            denormalizationContext: ['groups' => ['order_item:write']]
-        ),
-        new Put(
-            securityPostDenormalize: "is_granted('OWN_ORDER', object)",
-            normalizationContext: ['groups' => ['order_item:read']],
-            denormalizationContext: ['groups' => ['order_item:write']]
-        ),
-        new Patch(
-            securityPostDenormalize: "is_granted('OWN_ORDER', object)",
-            normalizationContext: ['groups' => ['order_item:read']],
-            denormalizationContext: ['groups' => ['order_item:write']]
-        ),
-        new Delete(security: "is_granted('OWN_ORDER', object)")
     ],
     normalizationContext: ['groups' => ['order_item:read']],
     denormalizationContext: ['groups' => ['order_item:write']]

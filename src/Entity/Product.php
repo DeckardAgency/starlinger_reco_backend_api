@@ -80,7 +80,7 @@ use ApiPlatform\OpenApi\Model;
     normalizationContext: ['groups' => ['product:read', 'media_item:read']],
     denormalizationContext: ['groups' => ['product:write', 'media_item:write']]
 )]
-#[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'createdAt', 'partNo', 'shortDescription', 'qty', 'qtyStep'])]
+#[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'createdAt', 'partNo', 'shortDescription', 'qty', 'qtyStep', 'price'])]
 #[ApiFilter(SearchFilter::class, properties: [
     'id' => 'exact',
     'slug' => 'exact',
@@ -198,7 +198,10 @@ class Product
      * @var Collection<int, MediaItem>
      */
     #[ORM\OneToMany(targetEntity: MediaItem::class, mappedBy: 'product', cascade: ['persist', 'remove'], orphanRemoval: true)]
-    #[Groups(['product:read', 'product:write'])]
+    // product:item (not product:read) so this collection is serialized only on the single-item
+    // GET / write responses — the list GetCollection uses product:read and must stay light
+    // (the shop grid renders the scalar `image` field and lazy-loads detail on click).
+    #[Groups(['product:item', 'product:write'])]
     #[ApiProperty(writableLink: true)]
     private Collection $imageGallery;
 
@@ -206,7 +209,9 @@ class Product
      * @var Collection<int, MediaItem>
      */
     #[ORM\OneToMany(targetEntity: MediaItem::class, mappedBy: 'productDocument', cascade: ['persist', 'remove'], orphanRemoval: true)]
-    #[Groups(['product:read', 'product:write'])]
+    // product:item (not product:read): serialized only on single-item GET / write responses,
+    // kept out of the list payload. See imageGallery above.
+    #[Groups(['product:item', 'product:write'])]
     #[ApiProperty(writableLink: true)]
     private Collection $documents;
 

@@ -18,6 +18,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiResource(
     operations: [
         new GetCollection(
+            security: "is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
             normalizationContext: ['groups' => ['user_invitation:read']],
         ),
         new Post(
@@ -26,6 +27,7 @@ use Symfony\Component\Validator\Constraints as Assert;
             processor: InvitationCreatedProcessor::class
         ),
         new Get(
+            security: "is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')",
             normalizationContext: ['groups' => ['user_invitation:read']],
         ),
         new Delete(),
@@ -78,8 +80,10 @@ class UserInvitation
     #[Groups(['user_invitation:read', 'user_invitation:create', 'user_invitation:verify'])]
     private ?string $lastName = null;
 
+    // The token is a bearer secret for the public /verify and /complete flows,
+    // which look it up server-side. It must never be serialized on read, or a
+    // list of pending invitations would leak takeover tokens.
     #[ORM\Column(length: 128, unique: true)]
-    #[Groups(['user_invitation:read'])]
     private ?string $token = null;
 
     #[ORM\Column(length: 20)]

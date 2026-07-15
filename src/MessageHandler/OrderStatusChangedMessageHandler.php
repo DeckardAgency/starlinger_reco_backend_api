@@ -27,7 +27,8 @@ class OrderStatusChangedMessageHandler
         private readonly OrderLogService $orderLogService,
         private readonly EntityManagerInterface $entityManager,
         private readonly string $adminEmail = 'admin@example.com',
-        private readonly string $senderEmail = 'noreply@example.com'
+        private readonly string $senderEmail = 'noreply@example.com',
+        private readonly string $clientAppUrl = 'http://localhost:4200'
     ) {
     }
 
@@ -314,13 +315,9 @@ class OrderStatusChangedMessageHandler
      */
     private function getBaseUrl(): string
     {
-        if (isset($_SERVER['HTTP_HOST'])) {
-            $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https://' : 'http://';
-            return $protocol . $_SERVER['HTTP_HOST'];
-        }
-
-        // Fallback - should be configured in environment variables
-        return $_ENV['APP_BASE_URL'] ?? 'https://example.com';
+        // Configured customer-app URL (not $_SERVER['HTTP_HOST'], which is unset in
+        // the async worker and host-header-poisonable if run synchronously).
+        return rtrim($this->clientAppUrl, '/');
     }
 
     /**

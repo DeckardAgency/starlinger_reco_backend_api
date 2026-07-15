@@ -10,6 +10,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\Security\Core\Security;
@@ -62,23 +63,20 @@ class SupportTicketProcessor implements ProcessorInterface
                 $data->setUser($user);
             }
 
-            // Handle file upload using same approach as CreateMediaItemAction
+            // Handle file upload using same approach as CreateMediaItemAction.
+            // Validation failures (size/type/empty) propagate as a 400 rather than
+            // being silently swallowed, so the client knows the attachment was rejected.
             if ($request instanceof Request && $request->files->has('attachment')) {
                 $file = $request->files->get('attachment');
 
                 if ($file) {
-                    try {
-                        $mediaItem = $this->handleFileUpload($file);
+                    $mediaItem = $this->handleFileUpload($file);
 
-                        // Persist the MediaItem
-                        $this->entityManager->persist($mediaItem);
+                    // Persist the MediaItem
+                    $this->entityManager->persist($mediaItem);
 
-                        // Set the MediaItem to the support ticket
-                        $data->setAttachment($mediaItem);
-                    } catch (\Exception $e) {
-                        // Handle file upload error
-                        // You could log this error
-                    }
+                    // Set the MediaItem to the support ticket
+                    $data->setAttachment($mediaItem);
                 }
             }
         }
@@ -97,6 +95,45 @@ class SupportTicketProcessor implements ProcessorInterface
 
     private function handleFileUpload($uploadedFile): MediaItem
     {
+        // Content-based validation mirroring CreateMediaItemAction: attachments are
+        // written to the public docroot, so an unvalidated upload would let any
+        // authenticated user drop arbitrary/oversized content (stored XSS, DoS).
+        $maxFileSize = 5 * 1024 * 1024; // 5MB
+        if ($uploadedFile->getSize() > $maxFileSize) {
+            throw new BadRequestHttpException(sprintf(
+                'File size exceeds maximum allowed size of %d MB',
+                $maxFileSize / 1024 / 1024
+            ));
+        }
+
+        if ($uploadedFile->getSize() === 0) {
+            throw new BadRequestHttpException('File is empty');
+        }
+
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $detectedMimeType = $finfo->file($uploadedFile->getPathname());
+
+        $allowedMimeTypes = [
+            'image/jpeg',
+            'image/png',
+            'image/gif',
+            'image/webp',
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'text/plain',
+            'text/csv',
+        ];
+
+        if (!in_array($detectedMimeType, $allowedMimeTypes, true)) {
+            throw new BadRequestHttpException(sprintf(
+                'File type "%s" is not allowed.',
+                $detectedMimeType
+            ));
+        }
+
         $filesystem = new Filesystem();
 
         // Ensure upload directory exists

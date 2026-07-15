@@ -51,6 +51,13 @@ class OrderWorkflowSubscriber implements EventSubscriberInterface
         $fromPlaces = $transition->getFroms();
         $oldStatus = reset($fromPlaces) ?: 'unknown'; // Get first "from" place
 
+        // Draft submission (draft -> new) already sends the order confirmation via
+        // OrderCreatedMessage (OrderPriceProcessor). Emitting a status-change email
+        // here too would double-send the same confirmation, so skip it.
+        if ($oldStatus === Order::STATUS_DRAFT && $newStatus === Order::STATUS_NEW) {
+            return;
+        }
+
         // Get current authenticated user
         $user = $this->security->getUser();
         $modifiedBy = null;
