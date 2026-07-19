@@ -65,15 +65,13 @@ final class ClientUsersProcessor implements ProcessorInterface
         $currentUsers = $client->getUsers()->toArray();
         $currentUserIds = array_map(fn(User $user) => $user->getId(), $currentUsers);
 
-        // Find users to remove (in current but not in new)
-        $usersToRemove = array_diff($currentUserIds, $newUserIds);
-        foreach ($usersToRemove as $userId) {
-            $user = $this->userRepository->find($userId);
-            if ($user && $user->getClient() === $client) {
-                $user->setClient(null);
-                $this->entityManager->persist($user);
-            }
-        }
+        // NOTE: intentionally do NOT auto-detach users that are absent from the
+        // payload. A partial/stray `users` array (e.g. a client PATCH that didn't
+        // mean to manage membership, or a list that wasn't fully loaded) would
+        // otherwise silently null those users' client -> "Account Not Configured"
+        // and they can no longer log in. Removing a user from a client is done
+        // explicitly on the User resource (PATCH user with client: null), so this
+        // processor only ADDS the users listed here.
 
         // Find users to add (in new but not in current)
         $usersToAdd = array_diff($newUserIds, $currentUserIds);

@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
@@ -41,10 +42,15 @@ use Symfony\Component\Validator\Constraints as Assert;
     ],
     normalizationContext: ['groups' => ['support_ticket:read', 'media_item:read', 'user:read']],
     denormalizationContext: ['groups' => ['support_ticket:write']],
+    // Newest-first by default. The PK is a random GUID, so without this the
+    // fallback "ORDER BY id ASC" returned tickets in a chronologically-meaningless
+    // order — older tickets appeared missing / shifted between refreshes.
+    order: ['createdAt' => 'DESC', 'id' => 'DESC'],
     paginationEnabled: true,
-    paginationItemsPerPage: 30
+    paginationItemsPerPage: 100
 )]
 #[ApiFilter(SearchFilter::class, properties: ['status' => 'exact', 'urgency' => 'exact', 'user' => 'exact'])]
+#[ApiFilter(OrderFilter::class, properties: ['createdAt', 'status', 'urgency'])]
 class SupportTicket
 {
     #[ORM\Id]
