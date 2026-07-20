@@ -37,13 +37,16 @@ lexik_jwt_authentication:
     # Uses the 'email' property accessor (getEmail()) to populate the JWT claim
     user_id_claim: email
 
-# The deployed frontend proxies /api through its own origin (Vercel rewrite ->
-# Cloudways backend), so the auth cookie is now first-party / same-site. SameSite=Lax
-# is correct here and — unlike None — does not require the Secure attribute, which was
-# being dropped behind the proxy and caused "JWT Token not found" (cookie rejected).
-# (Only revert to None if the SPA and API are ever served from genuinely different sites.)
+# Prod: the SPAs (vercel.app) call this API (cloudwaysapps.com) directly cross-site —
+# the former Vercel /api proxy is gone (its datacenter egress IPs tripped the host's
+# Imunify360 bot-protection). A cross-site cookie needs SameSite=None, and because
+# third-party cookies are blocked by Safari/Chrome-incognito, it must also be
+# Partitioned (CHIPS): the browser then stores it per top-level site, which is exactly
+# right for a single-frontend auth cookie. Partitioned requires Secure, so
+# JWT_COOKIE_SECURE must be true in prod.
 when@prod:
     lexik_jwt_authentication:
         set_cookies:
             BEARER:
-                samesite: lax
+                samesite: none
+                partitioned: true
