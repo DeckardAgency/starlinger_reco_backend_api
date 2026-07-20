@@ -37,12 +37,13 @@ lexik_jwt_authentication:
     # Uses the 'email' property accessor (getEmail()) to populate the JWT claim
     user_id_claim: email
 
-# The deployed frontend (*.vercel.app) and API (*.cloudwaysapps.com) are different
-# sites, so the auth cookie must be SameSite=None there or browsers won't send it
-# cross-site. (Env vars can't drive this enum node on Symfony 6.4.) If frontend and
-# API ever move under one domain (app./api.starlinger.com), drop this back to lax.
+# The deployed frontend proxies /api through its own origin (Vercel rewrite ->
+# Cloudways backend), so the auth cookie is now first-party / same-site. SameSite=Lax
+# is correct here and — unlike None — does not require the Secure attribute, which was
+# being dropped behind the proxy and caused "JWT Token not found" (cookie rejected).
+# (Only revert to None if the SPA and API are ever served from genuinely different sites.)
 when@prod:
     lexik_jwt_authentication:
         set_cookies:
             BEARER:
-                samesite: none
+                samesite: lax

@@ -12,10 +12,11 @@ gesdinet_jwt_refresh_token:
         secure: '%env(bool:JWT_COOKIE_SECURE)%'
         http_only: true
 
-# Same reasoning as the BEARER cookie (see lexik_jwt_authentication.yaml): the staging
-# frontend on *.vercel.app is a different site than the API, so cross-site requests
-# only carry the cookie when SameSite=None. Revert to lax once both share one domain.
+# Same reasoning as the BEARER cookie (see lexik_jwt_authentication.yaml): the frontend
+# proxies /api through its own origin, so the refresh cookie is first-party / same-site.
+# SameSite=Lax is correct and, unlike None, does not require Secure (which was dropped
+# behind the proxy). Only revert to None if SPA and API are served from different sites.
 when@prod:
     gesdinet_jwt_refresh_token:
         cookie:
-            same_site: none
+            same_site: lax
