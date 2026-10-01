@@ -540,6 +540,31 @@ class Order
     }
 
     /**
+     * Distinct names of the managed clients this order was placed for (agent
+     * "on behalf of" orders): the order-level client plus any per-line clients
+     * from mixed carts. Empty array for ordinary orders. Serialized on list
+     * responses so order lists can label agent orders without loading items.
+     *
+     * @return string[]
+     */
+    #[Groups(['order:read'])]
+    public function getOnBehalfOfClientNames(): array
+    {
+        $names = [];
+        if ($this->onBehalfOfClient !== null) {
+            $names[$this->onBehalfOfClient->getName()] = true;
+        }
+        foreach ($this->items as $item) {
+            $client = $item->getOnBehalfOfClient();
+            if ($client !== null) {
+                $names[$client->getName()] = true;
+            }
+        }
+
+        return array_keys($names);
+    }
+
+    /**
      * Sum of item quantities ("parts ordered" in the frontends). Iterating
      * initializes the collection, but without joining products — far cheaper
      * than serializing the full item tree on every list row.
