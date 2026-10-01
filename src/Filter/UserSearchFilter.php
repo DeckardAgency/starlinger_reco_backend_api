@@ -9,7 +9,7 @@ use Doctrine\ORM\QueryBuilder;
 use Symfony\Component\PropertyInfo\Type;
 
 /**
- * OR search filter for users — matches email OR firstName OR lastName.
+ * OR search filter for users — matches email OR firstName OR lastName OR username.
  * Usage: ?search=query
  */
 final class UserSearchFilter extends AbstractFilter
@@ -37,7 +37,7 @@ final class UserSearchFilter extends AbstractFilter
 
         $queryBuilder
             ->andWhere(sprintf(
-                '%1$s.email LIKE :%2$s OR %1$s.firstName LIKE :%2$s OR %1$s.lastName LIKE :%2$s',
+                '%1$s.email LIKE :%2$s OR %1$s.firstName LIKE :%2$s OR %1$s.lastName LIKE :%2$s OR %1$s.username LIKE :%2$s',
                 $rootAlias, $paramName
             ))
             ->setParameter($paramName, '%' . $value . '%');
@@ -50,7 +50,7 @@ final class UserSearchFilter extends AbstractFilter
                 'property' => null,
                 'type' => Type::BUILTIN_TYPE_STRING,
                 'required' => false,
-                'description' => 'Search users by email, first name, or last name',
+                'description' => 'Search users by email, first name, last name, or username',
                 'openapi' => [
                     'example' => 'john',
                 ],
