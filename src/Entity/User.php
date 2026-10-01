@@ -59,6 +59,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: '`user`')]
 #[UniqueEntity('email')]
+#[UniqueEntity('username', message: 'This username is already taken.')]
 #[ActiveUserLimit]
 class User implements UserInterface, PasswordAuthenticatedUserInterface
 {
@@ -74,7 +75,8 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[Groups(['user:read', 'user:create', 'user:update', 'order:read', 'client:read:details'])]
     private ?string $email = null;
 
-    #[ORM\Column(length: 180, nullable: true)]
+    // Unique because it doubles as a login identifier (see UserRepository::loadUserByIdentifier)
+    #[ORM\Column(length: 180, nullable: true, unique: true)]
     #[Groups(['user:read', 'user:create', 'user:update'])]
     private ?string $username = null;
 
@@ -184,7 +186,8 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function setUsername(?string $username): static
     {
-        $this->username = $username;
+        // Empty string would collide under the unique index; store NULL instead
+        $this->username = ($username !== null && trim($username) !== '') ? trim($username) : null;
 
         return $this;
     }

@@ -8,6 +8,8 @@ use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\PasswordUpgraderInterface;
+use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Security\Core\User\UserLoaderInterface;
 
 /**
  * @extends ServiceEntityRepository<User>
@@ -17,11 +19,33 @@ use Symfony\Component\Security\Core\User\PasswordUpgraderInterface;
  * @method User[]    findAll()
  * @method User[]    findBy(array $criteria, array $orderBy = null, $limit = null, $offset = null)
  */
-class UserRepository extends ServiceEntityRepository implements PasswordUpgraderInterface
+class UserRepository extends ServiceEntityRepository implements PasswordUpgraderInterface, UserLoaderInterface
 {
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, User::class);
+    }
+
+    /**
+     * Login identifier resolution: email first, then username as a fallback.
+     *
+     * Email-first means an account's email can never be shadowed by another
+     * user's username. The JWT identity claim and getUserIdentifier() remain
+     * the EMAIL regardless of which identifier was typed at login, so token
+     * refresh and user_id_claim behavior are unchanged.
+     */
+    public function loadUserByIdentifier(string $identifier): ?UserInterface
+    {
+        return $this->createQueryBuilder('u')
+            ->where('u.email = :id')
+            ->setParameter('id', $identifier)
+            ->getQuery()
+            ->getOneOrNullResult()
+            ?? $this->createQueryBuilder('u')
+                ->where('u.username = :id')
+                ->setParameter('id', $identifier)
+                ->getQuery()
+                ->getOneOrNullResult();
     }
 
     /**

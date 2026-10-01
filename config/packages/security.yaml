@@ -10,7 +10,8 @@ security:
         app_user_provider:
             entity:
                 class: App\Entity\User
-                property: email
+                # No `property`: UserRepository::loadUserByIdentifier resolves the
+                # login identifier as email first, then username (both unique).
 
     firewalls:
         dev:
