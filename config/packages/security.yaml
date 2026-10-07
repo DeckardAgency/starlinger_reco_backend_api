@@ -38,6 +38,16 @@ security:
             stateless: true
             security: false
 
+        # Dedicated firewall: the refresh call arrives with an EXPIRED BEARER
+        # cookie by definition. On a shared firewall the jwt authenticator
+        # rejects that cookie (401) before refresh_jwt ever runs — YAML order
+        # does not change authenticator priority — so refresh must live on a
+        # firewall that has no jwt authenticator at all.
+        refresh:
+            pattern: ^/api/token/refresh
+            stateless: true
+            refresh_jwt: ~
+
         api:
             pattern: ^/api
             stateless: true
@@ -46,11 +56,6 @@ security:
                 check_path: /api/login_check
                 success_handler: lexik_jwt_authentication.handler.authentication_success
                 failure_handler: lexik_jwt_authentication.handler.authentication_failure
-            # refresh_jwt BEFORE jwt: the refresh call arrives with an EXPIRED
-            # BEARER cookie by definition; if jwt runs first it 401s the request
-            # and the session can never be refreshed (daily forced logouts).
-            refresh_jwt:
-                check_path: /api/token/refresh
             jwt: ~
 
         main:
