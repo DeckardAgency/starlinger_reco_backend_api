@@ -76,19 +76,23 @@ class PasswordResetService
     }
 
     /**
-     * Request a password reset for a user (self-service by user entering their email)
+     * Request a password reset for a user (self-service by the user entering
+     * their e-mail address or username).
      *
      * @throws \Exception if rate limit exceeded
      */
-    public function requestPasswordResetByEmail(string $email, ?string $ipAddress = null): ?PasswordResetToken
+    public function requestPasswordResetByEmail(string $identifier, ?string $ipAddress = null): ?PasswordResetToken
     {
-        // Find user by email - we don't reveal if email exists or not for security
-        $user = $this->entityManager->getRepository(User::class)->findOneBy(['email' => $email]);
+        // Resolve like login does: e-mail first, then username (both unique).
+        // We don't reveal whether the identifier exists - callers always report success.
+        $repo = $this->entityManager->getRepository(User::class);
+        $user = $repo->findOneBy(['email' => $identifier])
+            ?? $repo->findOneBy(['username' => $identifier]);
 
         if (!$user) {
-            // Log the attempt but don't reveal that email doesn't exist
-            $this->logger->info('Password reset requested for non-existent email', [
-                'email' => $email,
+            // Log the attempt but don't reveal that the identifier doesn't exist
+            $this->logger->info('Password reset requested for non-existent identifier', [
+                'identifier' => $identifier,
                 'ip_address' => $ipAddress,
             ]);
             return null;

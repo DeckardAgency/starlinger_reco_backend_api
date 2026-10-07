@@ -87,23 +87,18 @@ class PasswordResetController extends AbstractController
 
         if (!isset($data['email']) || empty($data['email'])) {
             return $this->json([
-                'error' => 'Email is required',
+                'error' => 'Email or username is required',
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        $email = trim($data['email']);
-
-        // Validate email format
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return $this->json([
-                'error' => 'Please enter a valid email address',
-            ], Response::HTTP_BAD_REQUEST);
-        }
+        // The field is named 'email' for backwards compatibility, but accepts
+        // the same identifiers as the login form: e-mail address OR username.
+        $identifier = trim($data['email']);
 
         try {
             // This will return null if user not found, but we don't reveal that
             $this->passwordResetService->requestPasswordResetByEmail(
-                $email,
+                $identifier,
                 $request->getClientIp()
             );
 
