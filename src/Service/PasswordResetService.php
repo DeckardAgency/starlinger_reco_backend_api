@@ -116,7 +116,21 @@ class PasswordResetService
             ));
         }
 
-        // Revoke any existing pending tokens for this user
+        // If a pending, unexpired token already exists, RE-SEND the same link
+        // instead of minting a new one. Requesting twice (impatience, e-mail
+        // latency, Gmail threading) would otherwise revoke the earlier link,
+        // so whichever e-mail the user opens might carry a dead token.
+        $existing = $this->tokenRepository->findActiveByUser($user)[0] ?? null;
+        if ($existing !== null) {
+            $this->sendPasswordResetEmail($existing);
+            $this->logger->info('Password reset re-requested; re-sent existing valid link', [
+                'user_email' => $user->getEmail(),
+                'ip_address' => $ipAddress,
+            ]);
+            return $existing;
+        }
+
+        // Revoke any expired/stale pending tokens for this user
         $this->tokenRepository->revokeAllForUser($user);
 
         // Create new token - user is their own "creator" for self-service resets
