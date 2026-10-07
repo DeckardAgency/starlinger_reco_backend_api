@@ -28,6 +28,16 @@ security:
                 success_handler: lexik_jwt_authentication.handler.authentication_success
                 failure_handler: lexik_jwt_authentication.handler.authentication_failure
 
+        # Truly public auth endpoints. These must NOT sit on the jwt firewall:
+        # PUBLIC_ACCESS does not help there, because a present-but-stale BEARER
+        # cookie is authenticated (and rejected, 401 "Invalid JWT Token") before
+        # access_control is consulted — so password reset / registration broke
+        # for any browser still carrying an old cookie.
+        public_auth:
+            pattern: ^/api/(auth/(forgot-password|reset-password|validate-reset-token)|register$|user_invitations/(verify|complete))
+            stateless: true
+            security: false
+
         api:
             pattern: ^/api
             stateless: true
@@ -36,9 +46,12 @@ security:
                 check_path: /api/login_check
                 success_handler: lexik_jwt_authentication.handler.authentication_success
                 failure_handler: lexik_jwt_authentication.handler.authentication_failure
-            jwt: ~
+            # refresh_jwt BEFORE jwt: the refresh call arrives with an EXPIRED
+            # BEARER cookie by definition; if jwt runs first it 401s the request
+            # and the session can never be refreshed (daily forced logouts).
             refresh_jwt:
                 check_path: /api/token/refresh
+            jwt: ~
 
         main:
             lazy: true
