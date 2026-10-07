@@ -176,7 +176,8 @@ class PasswordResetService
     /**
      * Validate password meets requirements
      *
-     * @throws \Exception if password doesn't meet requirements
+     * @throws \InvalidArgumentException if password doesn't meet requirements
+     *         (distinct type: callers must NOT report this as a token problem)
      */
     public function validatePassword(string $password): void
     {
@@ -199,7 +200,7 @@ class PasswordResetService
         }
 
         if (!empty($errors)) {
-            throw new \Exception(implode(' ', $errors));
+            throw new \InvalidArgumentException(implode(' ', $errors));
         }
     }
 

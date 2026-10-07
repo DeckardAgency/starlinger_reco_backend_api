@@ -259,9 +259,14 @@ class PasswordResetController extends AbstractController
                 'success' => true,
                 'message' => 'Password has been reset successfully',
             ], Response::HTTP_OK);
+        } catch (\InvalidArgumentException $e) {
+            // Password-rule failure: tell the user WHICH rule failed. Masking
+            // this as a token problem sent users in circles requesting new links.
+            return $this->json([
+                'error' => $e->getMessage(),
+            ], Response::HTTP_BAD_REQUEST);
         } catch (\Exception $e) {
-            // Password is already validated above; the only expected failure here is a
-            // bad/expired token. Log details, return a controlled message.
+            // Remaining expected failure: a bad/expired token.
             $this->logger->warning('resetPassword failed', ['exception' => $e]);
             return $this->json([
                 'error' => 'Invalid or expired password reset token.',
