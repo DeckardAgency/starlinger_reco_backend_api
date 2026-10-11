@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Doctrine\Orm\Filter\BooleanFilter;
 use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
@@ -90,6 +91,7 @@ use ApiPlatform\OpenApi\Model;
     'productGroupId' => 'exact',
 ])]
 #[ApiFilter(PropertyFilter::class)]
+#[ApiFilter(BooleanFilter::class, properties: ['inStock'])]
 #[ApiFilter(ProductSearchFilter::class)]
 class Product
 {
@@ -144,6 +146,16 @@ class Product
     #[Groups(['product:read', 'product:write'])]
     #[SerializedName('isActive')]
     private bool $isActive = true;
+
+    /**
+     * Availability flag ("parts in stock" for integrations). No stock data has
+     * ever existed — the legacy shop had the schema but never used it — so this
+     * defaults to true and is maintained by hand until an ERP feed owns it.
+     */
+    #[ORM\Column(name: 'in_stock', type: 'boolean', options: ['default' => true])]
+    #[Groups(['product:read', 'product:write'])]
+    #[SerializedName('inStock')]
+    private bool $inStock = true;
 
     #[ORM\Column(name: 'product_type', length: 10, nullable: true)]
     #[Assert\Choice(choices: ['VT', 'ET'], message: 'Product type must be VT or ET.')]
@@ -371,6 +383,18 @@ class Product
     public function setIsActive(bool $isActive): static
     {
         $this->isActive = $isActive;
+        return $this;
+    }
+
+    public function getInStock(): bool
+    {
+        return $this->inStock;
+    }
+
+    public function setInStock(bool $inStock): static
+    {
+        $this->inStock = $inStock;
+
         return $this;
     }
 

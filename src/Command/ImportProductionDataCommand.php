@@ -1203,7 +1203,10 @@ class ImportProductionDataCommand extends Command
                     'machine_text' => null,
                     'statistic' => null,
                     'is_active' => $this->toBool($row['active'] ?? 1),
-                    'qty' => isset($row['qty']) ? (int) (float) $row['qty'] : null,
+                    // Legacy uses 9999 as an "unlimited" sentinel (136/137 products) — not a real quantity.
+                    'qty' => isset($row['qty']) && (float) $row['qty'] != 9999.0 ? (int) (float) $row['qty'] : null,
+                    // No stock data exists in legacy (schema present, never used) — see field-mapping-audit §3.
+                    'in_stock' => 1,
                     'qty_step' => isset($row['qty_step']) ? (int) (float) $row['qty_step'] : null,
                     'quote_item_limit' => isset($row['quote_item_limit']) ? (int) (float) $row['quote_item_limit'] : null,
                     'fixed_qty' => isset($row['fixed_qty']) ? (int) (float) $row['fixed_qty'] : null,
@@ -1410,6 +1413,12 @@ class ImportProductionDataCommand extends Command
                 'delivery_type_id' => !empty($row['delivery_type_id']) ? (int) $row['delivery_type_id'] : null,
                 'shipping_address_id' => $shippingAddressId,
                 'notes' => null,
+                // Legacy has no customer-entered reference; the ERP-side reference is remote_code.
+                'customer_reference' => null,
+                'erp_reference' => isset($row['remote_code']) && trim((string) $row['remote_code']) !== '' ? trim((string) $row['remote_code']) : null,
+                'erp_sent_at' => !empty($row['date_sent_to_erp']) ? $row['date_sent_to_erp'] : null,
+                'currency' => !empty($row['currency_id']) ? ($this->currencyMap[(int) $row['currency_id']] ?? 'EUR') : 'EUR',
+                'currency_rate' => !empty($row['currency_rate']) ? (float) $row['currency_rate'] : 1.0,
                 'shipping_address' => $shippingAddr,
                 'billing_address' => $billingAddr,
                 'is_draft' => (int) ($status === 'draft'),

@@ -228,6 +228,40 @@ class Order
     #[Groups(['order:read'])]
     private float $totalTax = 0;
 
+    /**
+     * ISO 4217 code of the order's currency. Legacy orders carried a currency
+     * (all EUR @ 1.0); reco previously assumed EUR implicitly.
+     */
+    #[ORM\Column(length: 3, options: ['default' => 'EUR'])]
+    #[Groups(['order:read'])]
+    private string $currency = 'EUR';
+
+    #[ORM\Column(type: "float", options: ['default' => 1])]
+    #[Groups(['order:read'])]
+    private float $currencyRate = 1.0;
+
+    /**
+     * The customer's own reference for this order (PO number etc.), entered at
+     * checkout. Distinct from $erpReference.
+     */
+    #[ORM\Column(length: 100, nullable: true)]
+    #[Groups(['order:read', 'order:write'])]
+    #[Assert\Length(max: 100)]
+    private ?string $customerReference = null;
+
+    /**
+     * Order reference in Starlinger's ERP (legacy order_entity.remote_code).
+     * Read-only via the API: set by the legacy import today, by the ERP handoff
+     * once one exists.
+     */
+    #[ORM\Column(length: 100, nullable: true)]
+    #[Groups(['order:read'])]
+    private ?string $erpReference = null;
+
+    #[ORM\Column(type: "datetime", nullable: true)]
+    #[Groups(['order:read'])]
+    private ?DateTimeInterface $erpSentAt = null;
+
     #[ORM\Column(type: "text", nullable: true)]
     #[Groups(['order:item', 'order:write'])]
     private ?string $notes = null;
@@ -463,6 +497,66 @@ class Order
     public function setNotes(?string $notes): static
     {
         $this->notes = $notes;
+        return $this;
+    }
+
+    public function getCurrency(): string
+    {
+        return $this->currency;
+    }
+
+    public function setCurrency(string $currency): static
+    {
+        $this->currency = $currency;
+
+        return $this;
+    }
+
+    public function getCurrencyRate(): float
+    {
+        return $this->currencyRate;
+    }
+
+    public function setCurrencyRate(float $currencyRate): static
+    {
+        $this->currencyRate = $currencyRate;
+
+        return $this;
+    }
+
+    public function getCustomerReference(): ?string
+    {
+        return $this->customerReference;
+    }
+
+    public function setCustomerReference(?string $customerReference): static
+    {
+        $this->customerReference = $customerReference !== null ? (trim($customerReference) ?: null) : null;
+
+        return $this;
+    }
+
+    public function getErpReference(): ?string
+    {
+        return $this->erpReference;
+    }
+
+    public function setErpReference(?string $erpReference): static
+    {
+        $this->erpReference = $erpReference;
+
+        return $this;
+    }
+
+    public function getErpSentAt(): ?DateTimeInterface
+    {
+        return $this->erpSentAt;
+    }
+
+    public function setErpSentAt(?DateTimeInterface $erpSentAt): static
+    {
+        $this->erpSentAt = $erpSentAt;
+
         return $this;
     }
 
