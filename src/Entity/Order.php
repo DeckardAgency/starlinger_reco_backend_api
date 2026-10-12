@@ -262,6 +262,15 @@ class Order
     #[Groups(['order:read'])]
     private ?DateTimeInterface $erpSentAt = null;
 
+    /**
+     * Not persisted. Absolute URL of this order in the webshop, filled by
+     * DeepLinkListener (postLoad/postPersist) from CLIENT_APP_URL so API
+     * consumers such as the Customer Portal can link straight into RECO.
+     */
+    #[ApiProperty(writable: false, description: 'Absolute link that opens this order in the RECO webshop (the webshop asks for a login if needed).', example: 'https://webshop.example.com/customer/orders/291')]
+    #[Groups(['order:read'])]
+    private ?string $deepLink = null;
+
     #[ORM\Column(type: "text", nullable: true)]
     #[Groups(['order:item', 'order:write'])]
     private ?string $notes = null;
@@ -556,6 +565,18 @@ class Order
     public function setErpSentAt(?DateTimeInterface $erpSentAt): static
     {
         $this->erpSentAt = $erpSentAt;
+
+        return $this;
+    }
+
+    public function getDeepLink(): ?string
+    {
+        return $this->deepLink;
+    }
+
+    public function setDeepLink(?string $deepLink): static
+    {
+        $this->deepLink = $deepLink;
 
         return $this;
     }

@@ -17,6 +17,7 @@ use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Serializer\Filter\PropertyFilter;
 use App\Filter\ProductSearchFilter;
 use App\Repository\ProductRepository;
+use App\State\Provider\RandomProductProvider;
 use DateTimeInterface;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -34,6 +35,28 @@ use ApiPlatform\OpenApi\Model;
 #[ORM\Index(name: "idx_product_product_group_id", columns: ["product_group_id"])]
 #[ApiResource(
     operations: [
+        // Declared before `/products/{id}` so the literal segment is routed here.
+        new GetCollection(
+            uriTemplate: '/products/random',
+            name: 'products_random',
+            provider: RandomProductProvider::class,
+            paginationEnabled: false,
+            normalizationContext: ['groups' => ['product:read', 'media_item:read']],
+            openapi: new Model\Operation(
+                tags: ['Product'],
+                summary: 'Random parts in stock',
+                description: 'A random selection of active parts that are in stock (default 5, max 20). Not paginated: the collection holds exactly the returned parts.',
+                parameters: [
+                    new Model\Parameter(
+                        name: 'limit',
+                        in: 'query',
+                        description: 'How many parts to return (1–20)',
+                        required: false,
+                        schema: ['type' => 'integer', 'minimum' => 1, 'maximum' => 20, 'default' => 5]
+                    ),
+                ],
+            ),
+        ),
         new Get(normalizationContext: ['groups' => ['product:read', 'product:item', 'media_item:read']]),
         new GetCollection(
             paginationItemsPerPage: 30,
@@ -156,6 +179,14 @@ class Product
     #[Groups(['product:read', 'product:write'])]
     #[SerializedName('inStock')]
     private bool $inStock = true;
+
+    /**
+     * Not persisted. Absolute URL of this part in the webshop, filled by
+     * DeepLinkListener (postLoad/postPersist) from CLIENT_APP_URL.
+     */
+    #[ApiProperty(writable: false, description: 'Absolute link that opens this part in the RECO webshop (the webshop asks for a login if needed).', example: 'https://webshop.example.com/customer/shop/products/112357')]
+    #[Groups(['product:read'])]
+    private ?string $deepLink = null;
 
     #[ORM\Column(name: 'product_type', length: 10, nullable: true)]
     #[Assert\Choice(choices: ['VT', 'ET'], message: 'Product type must be VT or ET.')]
@@ -394,6 +425,18 @@ class Product
     public function setInStock(bool $inStock): static
     {
         $this->inStock = $inStock;
+
+        return $this;
+    }
+
+    public function getDeepLink(): ?string
+    {
+        return $this->deepLink;
+    }
+
+    public function setDeepLink(?string $deepLink): static
+    {
+        $this->deepLink = $deepLink;
 
         return $this;
     }

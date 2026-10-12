@@ -22,6 +22,11 @@ services:
             $uploadDirectory: '%media_directory%'
             $serializer: '@serializer'
 
+    # Fills order/product `deepLink` (webshop URL) on load — see src/EventListener/DeepLinkListener.php
+    App\EventListener\DeepLinkListener:
+        arguments:
+            $clientAppUrl: '%app.client_url%'
+
     App\Controller\DocumentationMediaController:
         arguments:
             $uploadDirectory: '%media_directory%'

@@ -1,6 +1,40 @@
 api_platform:
     title: Starlinger RECO REST API
     version: 1.0.0
+    # Shown on /api/v1/docs (Swagger UI; add ?ui=re_doc for ReDoc). Written for
+    # partner teams integrating against the API (Customer Portal): what they need
+    # to know beyond the per-endpoint schema.
+    description: |
+        REST API of the Starlinger RECO webshop. Every endpoint requires an authenticated caller
+        (`Authorization: Bearer <JWT>`); Keycloak single sign-on will take over token issuance.
+        What a caller can see is scoped to its account: customer accounts see their own company's
+        data, Starlinger accounts see everything.
+
+        **Format and paging.** Responses are JSON-LD (`application/ld+json`). Collections are paginated
+        (`page`, `itemsPerPage` ≤ 100) and wrapped in an envelope: `member` holds the items, `totalItems` the
+        count, `view.next` / `view.previous` the neighbouring pages. Timestamps are ISO 8601 (UTC), amounts are
+        decimal numbers in the item's `currency`. Fields without a value are omitted from the response (treat a
+        missing key as `null`).
+
+        **Orders** – `GET /api/v1/orders?isDraft=false` lists submitted orders (`id`, `orderNumber`, `status`,
+        `createdAt`, `itemsCount` = order lines, `totalQuantity` = parts ordered, `customerReference` = the
+        customer's own reference, `erpReference` = Starlinger's ERP reference once handed over, `totalAmount`,
+        `currency`, `deepLink`). Statuses: `new` → `in_process` (optionally `waiting_for_payment`) →
+        `ready_for_shipment` → `shipped` → `delivered` (completed); terminal exceptions `canceled`, `reversal`.
+        **Open orders** = all statuses except `delivered`, e.g.
+        `status[]=new&status[]=in_process&status[]=waiting_for_payment&status[]=ready_for_shipment&status[]=shipped`.
+        Filter by customer company with `user.client.code=<code>`, by period with `createdAt[after]` / `createdAt[before]`.
+
+        **Parts** – `GET /api/v1/products` lists catalogue parts (`id`, `partNo` = product code, `name`,
+        `shortDescription`, `technicalDescription` (may contain HTML), `featuredImage.filePath`, `price`,
+        `currency`, `inStock`, `deepLink`). **Parts in stock:** add `inStock=true`. Search by code and/or name
+        with `search=<text>`. **Random parts in stock:** `GET /api/v1/products/random?limit=5`. Image paths are
+        relative to this API's host (`https://<api-host>/uploads/...`).
+
+        **Deep links.** Orders and parts carry a `deepLink`: the absolute URL that opens the item in the
+        RECO webshop (the webshop asks for a login if needed).
+
+        **Field selection.** Add `properties[]=<field>` (repeatable) where documented to receive only those fields.
     show_webby: false
     defaults:
         stateless: true

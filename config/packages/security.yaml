@@ -38,6 +38,17 @@ security:
             stateless: true
             security: false
 
+        # The API documentation (Swagger UI / ReDoc at /api/v1/docs) is PUBLIC —
+        # same approach as the inquiry tool, so partner teams (Customer Portal)
+        # can read the contract without an account. Documentation only: every
+        # endpoint stays on the `api` firewall. `security: false` rather than
+        # PUBLIC_ACCESS because a stale BEARER cookie would otherwise be rejected
+        # (401) before access_control is consulted — see public_auth above.
+        api_docs:
+            pattern: ^/api/v1/docs
+            stateless: true
+            security: false
+
         # Dedicated firewall: the refresh call arrives with an EXPIRED BEARER
         # cookie by definition. On a shared firewall the jwt authenticator
         # rejects that cookie (401) before refresh_jwt ever runs — YAML order
@@ -67,8 +78,9 @@ security:
         - { path: ^/api/login_check, roles: PUBLIC_ACCESS }
         - { path: ^/api/register, roles: PUBLIC_ACCESS }
         - { path: ^/api/token/refresh, roles: PUBLIC_ACCESS }
-        # API schema/docs are admin-only (not an anonymous recon surface).
-        - { path: ^/api/docs, roles: ROLE_ADMIN }
+        # /api/v1/docs is public — handled by the `api_docs` firewall above
+        # (decision 2026-10-12: consistent with the inquiry tool's partner handoff).
+        # The former `^/api/docs` ROLE_ADMIN rule never matched the /api/v1 prefix.
         - { path: ^/api/user_invitations/verify, roles: PUBLIC_ACCESS }
         - { path: ^/api/user_invitations/complete, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/forgot-password, roles: PUBLIC_ACCESS }
