@@ -2,6 +2,7 @@
 
 namespace App\Command;
 
+use App\Enum\ProductLinkRelationType;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -1242,6 +1243,7 @@ class ImportProductionDataCommand extends Command
         $this->io->section('Importing ProductProductLinks');
         $source = $legacy->fetchAllAssociative('SELECT * FROM product_product_link_entity');
         $rows = [];
+        $seenPairs = [];
 
         foreach ($source as $row) {
             $parentId = isset($row['parent_product_id']) ? (int) $row['parent_product_id'] :
@@ -1255,12 +1257,20 @@ class ImportProductionDataCommand extends Command
                 if ($childId && !isset($this->importedIds['product'][$childId])) continue;
             }
 
+            // A link needs both ends, may not point at itself, and a (parent, child)
+            // pair exists at most once (uniq_ppl_parent_child) — first legacy row wins.
+            if ($parentId === null || $childId === null || $parentId === $childId) continue;
+            $pair = $parentId . ':' . $childId;
+            if (isset($seenPairs[$pair])) continue;
+            $seenPairs[$pair] = true;
+
             $rows[] = [
                 'id' => (int) $row['id'],
                 'parent_product_id' => $parentId,
                 'child_product_id' => $childId,
-                'relation_type_id' => isset($row['relation_type_id']) ? (int) $row['relation_type_id'] :
-                                      (isset($row['type_id']) ? (int) $row['type_id'] : null),
+                // The legacy link types (Related/Upsell/Crossell/Bundle/Configurable) have
+                // no RECO counterpart; every imported link is an "alternative".
+                'relation_type' => ProductLinkRelationType::Alternative->value,
                 'ord' => isset($row['ord']) ? (int) $row['ord'] : null,
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
