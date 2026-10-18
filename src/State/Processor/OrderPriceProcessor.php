@@ -26,6 +26,13 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
  */
 final class OrderPriceProcessor implements ProcessorInterface
 {
+    /**
+     * Context flag: skip dispatching OrderCreatedMessage after persisting. Set by
+     * batch callers (OrderCheckoutService) that wrap several orders in one DB
+     * transaction and dispatch the messages themselves once it has committed.
+     */
+    public const CONTEXT_DEFER_MESSAGES = 'defer_order_messages';
+
     public function __construct(
         private ProcessorInterface $persistProcessor,
         private EntityManagerInterface $entityManager,
@@ -183,8 +190,16 @@ final class OrderPriceProcessor implements ProcessorInterface
         // Process with the standard persist processor
         $result = $this->persistProcessor->process($data, $operation, $uriVariables, $context);
 
-        // Handle message dispatching after persistence
-        $this->handleMessageDispatching($data, $operation, $isNewOrder, $originalOrder, $isDraftSubmission, $modifiedBy);
+        // Handle message dispatching after persistence — unless a batch caller
+        // (checkout) asked to defer it until its surrounding transaction commits.
+        if (empty($context[self::CONTEXT_DEFER_MESSAGES])) {
+            $this->handleMessageDispatching($data, $operation, $isNewOrder, $originalOrder, $isDraftSubmission, $modifiedBy);
+        } else {
+            $this->logger->info('Order message dispatch deferred to the caller', [
+                'order_id' => $data->getId(),
+                'operation' => $operation->getName(),
+            ]);
+        }
 
         return $result;
     }

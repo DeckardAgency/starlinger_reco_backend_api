@@ -9,17 +9,19 @@
 
     <div class="order-details" style="margin: 20px 0; padding: 15px; background-color: #f8f9fa; border-radius: 5px;">
         <h3>Order Information:</h3>
+        {# The company the order is FOR: the managed client when a client agent ordered on its behalf, else the user's own company. #}
+        {% set orderedFor = order.onBehalfOfClient ?: (order.user ? order.user.client : null) %}
+        <p><strong>Company:</strong> {{ orderedFor ? orderedFor.name : '—' }}</p>
+        {% if order.onBehalfOfClient and order.user %}
+            <p><strong>Ordered by (agent):</strong> {{ order.user.client ? order.user.client.name ~ ' — ' : '' }}{{ order.user.fullName|trim ?: order.user.email }} ({{ order.user.email }})</p>
+        {% endif %}
         <p><strong>Customer:</strong> {{ order.user.fullName }} ({{ order.user.email }})</p>
         <p><strong>Date:</strong> {{ order.createdAt|date('Y-m-d H:i:s') }}</p>
         <p><strong>Total Amount:</strong> €{{ order.totalAmount|number_format(2, '.', ',') }}</p>
 
-        {% if order.shippingAddress %}
-            <p><strong>Shipping Address:</strong> {{ order.shippingAddress }}</p>
-        {% endif %}
-
-        {% if order.billingAddress %}
-            <p><strong>Billing Address:</strong> {{ order.billingAddress }}</p>
-        {% endif %}
+        {# Always printed — "—" when empty, so a missing address is visible rather than silently omitted. #}
+        <p><strong>Shipping Address:</strong> {{ order.shippingAddress ?: '—' }}</p>
+        <p><strong>Billing Address:</strong> {{ order.billingAddress ?: '—' }}</p>
 
         {% if order.notes %}
             <p><strong>Customer Notes:</strong> {{ order.notes }}</p>

@@ -19,6 +19,7 @@ use App\State\Processor\ClientUsersProcessor;
 use Doctrine\ORM\Mapping as ORM;
 use App\Repository\ClientRepository;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -55,7 +56,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 )]
 #[ApiFilter(SearchFilter::class, properties: [
     'name' => 'partial',
-    'code' => 'exact',
+    'code' => 'partial',
     'email' => 'partial',
     'accountGroup.id' => 'exact'
 ])]
@@ -612,6 +613,26 @@ class Client
     public function getManagedClientCount(): int
     {
         return $this->managedClients->count();
+    }
+
+    /**
+     * Read-only {id, name, code} of every managed client, sorted by name, so the
+     * admin can show the list without resolving each IRI. `managedClients` stays
+     * the writable IRI list.
+     *
+     * @return list<array{id: int|null, name: string|null, code: string|null}>
+     */
+    #[Groups(['client:read:details'])]
+    #[SerializedName('managedClientSummaries')]
+    public function getManagedClientSummaries(): array
+    {
+        $clients = $this->managedClients->toArray();
+        usort($clients, static fn (Client $a, Client $b): int => strcasecmp((string) $a->getName(), (string) $b->getName()));
+
+        return array_map(
+            static fn (Client $c): array => ['id' => $c->getId(), 'name' => $c->getName(), 'code' => $c->getCode()],
+            $clients
+        );
     }
 
     public function managesClient(Client $client): bool

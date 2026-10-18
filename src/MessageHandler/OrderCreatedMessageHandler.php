@@ -264,13 +264,15 @@ class OrderCreatedMessageHandler
     }
 
     /**
-     * Notify all ROLE_FINANCE users belonging to the order's client
-     * (Finance users only receive notifications, they have no webshop access).
+     * Notify all ROLE_FINANCE users of the client the order is FOR: the managed
+     * client when a client agent ordered on its behalf, otherwise the ordering
+     * user's own company. (Finance users only receive notifications, they have
+     * no webshop access.)
      */
     private function sendFinanceNotifications(Order $order, array $items, float $totalAmount): void
     {
         try {
-            $client = $order->getUser()?->getClient();
+            $client = $order->getOnBehalfOfClient() ?? $order->getUser()?->getClient();
             if (!$client) {
                 return;
             }
