@@ -57,8 +57,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(SearchFilter::class, properties: [
     'name' => 'partial',
     'code' => 'partial',
-    'email' => 'partial',
-    'accountGroup.id' => 'exact'
+    'email' => 'partial'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isArchived', 'isActive', 'isClientAgent'])]
 #[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'code', 'vatNumber', 'email', 'isActive', 'purchaseLimit', 'amountSpent'])]
@@ -174,11 +173,6 @@ class Client
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     #[Groups(['client:read', 'client:write', 'user:read', 'order:read'])]
     private bool $isArchived = false;
-
-    #[ORM\ManyToOne(targetEntity: AccountGroup::class)]
-    #[ORM\JoinColumn(name: 'account_group_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
-    #[Groups(['client:read', 'client:write'])]
-    private ?AccountGroup $accountGroup = null;
 
     /**
      * @var Collection<int, Address>
@@ -495,17 +489,6 @@ class Client
             $this->isActive = false;
         }
 
-        return $this;
-    }
-
-    public function getAccountGroup(): ?AccountGroup
-    {
-        return $this->accountGroup;
-    }
-
-    public function setAccountGroup(?AccountGroup $accountGroup): static
-    {
-        $this->accountGroup = $accountGroup;
         return $this;
     }
 

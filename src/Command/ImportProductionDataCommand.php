@@ -83,8 +83,8 @@ class ImportProductionDataCommand extends Command
                     'fuel_surcharge', 'delivery_price', 'product', 'product_group',
                     'delivery_type', 'address', '`user`', 'warehouse',
                     'client', 'country',
-                    'discount', 'packaging_price', 'payment_type',
-                    'import_manual_type_entity', 'import_manual_status_entity', 'account_group', 'tax_type',
+                    'discount_client', 'discount', 'packaging_price', 'payment_type',
+                    'import_manual_type_entity', 'import_manual_status_entity', 'tax_type',
                 ];
                 foreach ($tablesToTruncate as $table) {
                     try {
@@ -101,7 +101,6 @@ class ImportProductionDataCommand extends Command
             $importOrder = [
                 // Level 1 — Independent
                 'tax_type' => 'importTaxTypes',
-                'account_group' => 'importAccountGroups',
                 'import_manual_status' => 'importImportManualStatuses',
                 'import_manual_type' => 'importImportManualTypes',
                 'payment_type' => 'importPaymentTypes',
@@ -110,6 +109,7 @@ class ImportProductionDataCommand extends Command
                 // Level 2
                 'country' => 'importCountries',
                 'client' => 'importClients',
+                'discount_client' => 'importDiscountClients',
                 // Level 3
                 'warehouse' => 'importWarehouses',
                 'user' => 'importUsers',
@@ -398,30 +398,6 @@ class ImportProductionDataCommand extends Command
         $this->stats['TaxType'] = count($rows);
     }
 
-    private function importAccountGroups(Connection $legacy, Connection $conn, string $defaultPassword): void
-    {
-        $this->io->section('Importing AccountGroups');
-        $source = $legacy->fetchAllAssociative('SELECT * FROM account_group_entity');
-        $rows = [];
-
-        foreach ($source as $row) {
-            $rows[] = [
-                'id' => (int) $row['id'],
-                'name' => $row['name'] ?? 'Unknown',
-                'is_active' => $this->toBool($row['is_active'] ?? $row['active'] ?? 1),
-                'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
-                'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
-            ];
-            $this->importedIds['account_group'][(int) $row['id']] = true;
-        }
-
-        $this->io->writeln(sprintf('  Found %d account groups', count($rows)));
-        $this->importBatch($conn, 'account_group', $rows);
-        $this->resetAutoIncrement($conn, 'account_group');
-        $this->stats['AccountGroup'] = count($rows);
-    }
-
-
     private function importImportManualStatuses(Connection $legacy, Connection $conn, string $defaultPassword): void
     {
         $this->io->section('Importing ImportManualStatuses');
@@ -529,31 +505,67 @@ class ImportProductionDataCommand extends Command
         $this->stats['PackagingPrice'] = count($rows);
     }
 
+    /**
+     * discount_catalog_entity → discount. Legacy percent is positive = discount;
+     * RECO stores a signed adjustment (negative = discount, positive = markup) and
+     * has no validity window: a legacy discount outside its window or without a
+     * percent is imported INACTIVE so it cannot start applying (the same rule
+     * migration Version20261018140000 applied to existing data).
+     */
     private function importDiscounts(Connection $legacy, Connection $conn, string $defaultPassword): void
     {
         $this->io->section('Importing Discounts');
         $source = $legacy->fetchAllAssociative('SELECT * FROM discount_catalog_entity');
         $rows = [];
+        $now = date('Y-m-d H:i:s');
+        $deactivated = 0;
 
         foreach ($source as $row) {
+            $legacyPercent = $row['discount_percent'] ?? $row['discount'] ?? null;
+            $isActive = $this->toBool($row['is_active'] ?? $row['active'] ?? 1);
+
+            $from = $row['date_from'] ?? null;
+            $to = $row['date_to'] ?? null;
+            $outsideWindow = ($from && !str_starts_with($from, '0000-00-00') && $from > $now)
+                || ($to && !str_starts_with($to, '0000-00-00') && $to < $now);
+            if ($isActive && ($outsideWindow || (float) $legacyPercent == 0.0)) {
+                $isActive = 0;
+                $deactivated++;
+            }
+
             $rows[] = [
                 'id' => (int) $row['id'],
                 'name' => $row['name'] ?? 'Unknown',
-                'is_active' => $this->toBool($row['is_active'] ?? $row['active'] ?? 1),
-                'date_valid_from' => $row['date_from'] ?? null,
-                'date_valid_to' => $row['date_to'] ?? null,
-                'priority' => (int) ($row['priority'] ?? $row['ord'] ?? 0),
-                'discount_percent' => $row['discount_percent'] ?? $row['discount'] ?? null,
+                'is_active' => $isActive,
+                'adjustment_percent' => $this->legacyPercentToAdjustment($legacyPercent) ?? '0.0000',
                 'rules' => !empty($row['rules']) ? $row['rules'] : null,
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
+            $this->importedIds['discount'][(int) $row['id']] = true;
         }
 
         $this->io->writeln(sprintf('  Found %d discounts', count($rows)));
+        if ($deactivated > 0) {
+            $this->io->writeln(sprintf('  %d imported inactive (outside their legacy validity window or without a percent)', $deactivated));
+        }
         $this->importBatch($conn, 'discount', $rows);
         $this->resetAutoIncrement($conn, 'discount');
         $this->stats['Discount'] = count($rows);
+    }
+
+    /**
+     * Legacy percentages are positive numbers meaning "x % off"; RECO stores them
+     * signed (negative = discount). Null stays null, 0 stays "0.0000".
+     */
+    private function legacyPercentToAdjustment(mixed $legacyPercent): ?string
+    {
+        if ($legacyPercent === null || $legacyPercent === '') {
+            return null;
+        }
+        $value = (float) $legacyPercent;
+
+        return number_format($value == 0.0 ? 0.0 : -$value, 4, '.', '');
     }
 
     // ─── Level 2: Depends on Level 1 ───────────────────────────────────
@@ -619,12 +631,6 @@ class ImportProductionDataCommand extends Command
         $rows = [];
 
         foreach ($source as $row) {
-            $accountGroupId = isset($row['account_group_id']) && $row['account_group_id'] ? (int) $row['account_group_id'] : null;
-            // If account_group_entity has 0 rows, set to null to avoid FK violation
-            if ($accountGroupId && empty($this->importedIds['account_group'])) {
-                $accountGroupId = null;
-            }
-
             $rows[] = [
                 'id' => (int) $row['id'],
                 'name' => $row['name'] ?? 'Unknown',
@@ -643,7 +649,6 @@ class ImportProductionDataCommand extends Command
                 'max_active_users' => null,
                 'is_active' => $this->toBool($row['is_active'] ?? 1),
                 'is_archived' => 0,
-                'account_group_id' => $accountGroupId,
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),
             ];
@@ -654,6 +659,55 @@ class ImportProductionDataCommand extends Command
         $this->importBatch($conn, 'client', $rows);
         $this->resetAutoIncrement($conn, 'client');
         $this->stats['Client'] = count($rows);
+    }
+
+    /**
+     * Discount → client targeting. Legacy had direct account links and account-group
+     * links; RECO only has direct links, so group links are expanded into one row per
+     * client of the group (as migration Version20261018140000 did for existing data).
+     * A discount left without any client applies to nobody and is deactivated.
+     */
+    private function importDiscountClients(Connection $legacy, Connection $conn, string $defaultPassword): void
+    {
+        $this->io->section('Importing Discount → Client links');
+
+        $direct = $legacy->fetchAllAssociative(
+            'SELECT discount_catalog_id AS discount_id, account_id AS client_id FROM discount_catalog_account_link_entity'
+            . ' WHERE discount_catalog_id IS NOT NULL AND account_id IS NOT NULL'
+        );
+        $viaGroups = $legacy->fetchAllAssociative(
+            'SELECT l.discount_catalog_id AS discount_id, a.id AS client_id FROM discount_catalog_account_group_link_entity l'
+            . ' JOIN account_entity a ON a.account_group_id = l.account_group_id WHERE l.discount_catalog_id IS NOT NULL'
+        );
+
+        $pairs = [];
+        foreach ([...$direct, ...$viaGroups] as $row) {
+            $discountId = (int) $row['discount_id'];
+            $clientId = (int) $row['client_id'];
+            if (!isset($this->importedIds['discount'][$discountId]) || !isset($this->importedIds['client'][$clientId])) {
+                continue;
+            }
+            $pairs[$discountId . ':' . $clientId] = ['discount_id' => $discountId, 'client_id' => $clientId];
+        }
+
+        $this->io->writeln(sprintf(
+            '  Found %d direct and %d group-derived links -> %d distinct discount/client pairs',
+            count($direct),
+            count($viaGroups),
+            count($pairs)
+        ));
+        $this->importBatch($conn, 'discount_client', array_values($pairs));
+        $this->stats['DiscountClient'] = count($pairs);
+
+        if (!$this->dryRun) {
+            $orphans = (int) $conn->executeStatement(
+                'UPDATE discount d SET d.is_active = 0 WHERE d.is_active = 1'
+                . ' AND NOT EXISTS (SELECT 1 FROM discount_client dc WHERE dc.discount_id = d.id)'
+            );
+            if ($orphans > 0) {
+                $this->io->writeln(sprintf('  Deactivated %d discount(s) that target no client (RECO has no "global" discounts)', $orphans));
+            }
+        }
     }
 
     // ─── Level 3: Depends on Level 2 ───────────────────────────────────
@@ -1561,10 +1615,9 @@ class ImportProductionDataCommand extends Command
                 'product_id' => $productId,
                 'discount_price_base' => $row['discount_price_base'] ?? null,
                 'discount_price_retail' => $row['discount_price_retail'] ?? null,
-                'rebate' => $row['rebate'] ?? null,
+                // Legacy rebate is positive = discount; RECO stores it signed (negative = discount).
+                'rebate' => $this->legacyPercentToAdjustment($row['rebate'] ?? null),
                 'type' => isset($row['type']) ? (int) $row['type'] : null,
-                'date_valid_from' => $row['date_valid_from'] ?? null,
-                'date_valid_to' => $row['date_valid_to'] ?? null,
                 'applied_to' => $row['applied_to'] ?? null,
                 'created_at' => $row['created'] ?? date('Y-m-d H:i:s'),
                 'updated_at' => $row['modified'] ?? date('Y-m-d H:i:s'),

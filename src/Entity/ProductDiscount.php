@@ -65,6 +65,9 @@ class ProductDiscount
     #[Groups(['product_discount:read', 'product_discount:write'])]
     private ?int $discountId = null;
 
+    /**
+     * Fixed price override for this product: the client pays min(base price, this).
+     */
     #[ORM\Column(name: 'discount_price_base', type: 'decimal', precision: 12, scale: 4, nullable: true)]
     #[Groups(['product_discount:read', 'product_discount:write'])]
     private ?string $discountPriceBase = null;
@@ -73,6 +76,11 @@ class ProductDiscount
     #[Groups(['product_discount:read', 'product_discount:write'])]
     private ?string $discountPriceRetail = null;
 
+    /**
+     * Per-link signed percentage overriding the parent Discount's adjustmentPercent
+     * for this product (negative = discount, positive = markup). Null/0 = use the
+     * parent's value. Ignored when discountPriceBase is set.
+     */
     #[ORM\Column(type: 'decimal', precision: 12, scale: 4, nullable: true)]
     #[Groups(['product_discount:read', 'product_discount:write'])]
     private ?string $rebate = null;
@@ -80,14 +88,6 @@ class ProductDiscount
     #[ORM\Column(type: 'integer', nullable: true, options: ['unsigned' => true])]
     #[Groups(['product_discount:read', 'product_discount:write'])]
     private ?int $type = null;
-
-    #[ORM\Column(name: 'date_valid_from', type: 'datetime', nullable: true)]
-    #[Groups(['product_discount:read', 'product_discount:write'])]
-    private ?\DateTimeInterface $dateValidFrom = null;
-
-    #[ORM\Column(name: 'date_valid_to', type: 'datetime', nullable: true)]
-    #[Groups(['product_discount:read', 'product_discount:write'])]
-    private ?\DateTimeInterface $dateValidTo = null;
 
     #[ORM\Column(name: 'applied_to', length: 255, nullable: true)]
     #[Groups(['product_discount:read', 'product_discount:write'])]
@@ -177,28 +177,6 @@ class ProductDiscount
     public function setType(?int $type): static
     {
         $this->type = $type;
-        return $this;
-    }
-
-    public function getDateValidFrom(): ?\DateTimeInterface
-    {
-        return $this->dateValidFrom;
-    }
-
-    public function setDateValidFrom(?\DateTimeInterface $dateValidFrom): static
-    {
-        $this->dateValidFrom = $dateValidFrom;
-        return $this;
-    }
-
-    public function getDateValidTo(): ?\DateTimeInterface
-    {
-        return $this->dateValidTo;
-    }
-
-    public function setDateValidTo(?\DateTimeInterface $dateValidTo): static
-    {
-        $this->dateValidTo = $dateValidTo;
         return $this;
     }
 

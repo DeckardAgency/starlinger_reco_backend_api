@@ -11,6 +11,7 @@ use App\Message\OrderCreatedMessage;
 use App\Message\OrderStatusChangedMessage;
 use App\Security\ClientAgentAuthorization;
 use App\Service\DiscountResolver;
+use App\Service\PriceAdjuster;
 use App\Service\PriceCalculator;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -38,6 +39,7 @@ final class OrderPriceProcessor implements ProcessorInterface
         private EntityManagerInterface $entityManager,
         private PriceCalculator $priceCalculator,
         private DiscountResolver $discountResolver,
+        private PriceAdjuster $priceAdjuster,
         private LoggerInterface $logger,
         private Security $security,
         private MessageBusInterface $messageBus,
@@ -342,8 +344,8 @@ final class OrderPriceProcessor implements ProcessorInterface
                 }
             }
 
-            // Get the appropriate price
-            $price = $product->getPrice(); // Default price
+            // Base price: the client-specific price when one is valid, else the catalog price.
+            $basePrice = $product->getPrice();
             $isCustomPrice = false;
 
             if ($itemClient) {
@@ -351,41 +353,37 @@ final class OrderPriceProcessor implements ProcessorInterface
                 $clientProductPrice = $this->priceCalculator->getClientProductPrice($itemClient, $product);
 
                 if ($clientProductPrice && $clientProductPrice->isValid()) {
-                    $price = $clientProductPrice->getEffectivePrice();
+                    $basePrice = $clientProductPrice->getEffectivePrice();
                     $isCustomPrice = true;
 
                     $this->logger->debug('Applying client-specific price', [
                         'client' => $itemClient->getCode(),
                         'product' => $product->getName(),
                         'standard_price' => $product->getPrice(),
-                        'client_price' => $price,
+                        'client_price' => $basePrice,
                         'discount_percentage' => $clientProductPrice->getDiscountPercentage()
                     ]);
                 }
             }
 
-            // Apply campaign discount on top of resolved price
-            $resolved = $this->discountResolver->resolveDiscount($product, $itemClient);
-            if ($resolved !== null) {
-                if ($resolved->fixedPrice !== null) {
-                    $price = min($price, $resolved->fixedPrice);
-                } elseif ($resolved->percent > 0) {
-                    $price = round($price * (1 - $resolved->percent / 100), 2);
-                }
-            }
+            // Apply the campaign adjustment (discount or markup) on top of the base price.
+            $adjusted = $this->priceAdjuster->apply(
+                $basePrice,
+                $this->discountResolver->resolveDiscount($product, $itemClient)
+            );
+            $unitPrice = $adjusted->finalPrice;
 
-            // Store the original catalog price for discount tracking
-            $originalPrice = $product->getPrice();
+            // Snapshot. A markup IS the client's price, so it is also the "original":
+            // no discount is recorded and the order's subtotalBeforeDiscount/totalDiscount
+            // stay clean. Otherwise the catalog price is the reference, so a client-specific
+            // price and/or a discount both show up as the line's discount (as before).
+            $originalPrice = $adjusted->isMarkup ? $unitPrice : $product->getPrice();
             $item->setOriginalUnitPrice($originalPrice);
-
-            // Update the item with the correct (possibly discounted) price
-            $item->setUnitPrice($price);
+            $item->setUnitPrice($unitPrice);
             $item->setIsCustomPrice($isCustomPrice);
 
-            // Calculate discount percentage
-            if ($originalPrice > 0 && $price < $originalPrice) {
-                $discountPercent = (($originalPrice - $price) / $originalPrice) * 100;
-                $item->setDiscountPercent(round($discountPercent, 2));
+            if ($originalPrice > 0 && $unitPrice < $originalPrice) {
+                $item->setDiscountPercent(round(($originalPrice - $unitPrice) / $originalPrice * 100, 2));
             } else {
                 $item->setDiscountPercent(0);
             }

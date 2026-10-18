@@ -6,6 +6,7 @@ use App\Repository\ClientProductPriceRepository;
 use App\Repository\ClientRepository;
 use App\Repository\ProductRepository;
 use App\Service\DiscountResolver;
+use App\Service\PriceAdjuster;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -25,6 +26,7 @@ class ClientProductController extends AbstractController
         private SerializerInterface $serializer,
         private EntityManagerInterface $entityManager,
         private DiscountResolver $discountResolver,
+        private PriceAdjuster $priceAdjuster,
         private LoggerInterface $logger
     ) {}
 
@@ -158,26 +160,12 @@ class ClientProductController extends AbstractController
         foreach ($clientPrices as $clientProductPrice) {
             $product = $clientProductPrice->getProduct();
 
-            // Resolve discount (campaign or product-level)
-            $effectivePrice = $clientProductPrice->getEffectivePrice();
-            $resolved = $this->discountResolver->resolveDiscount($product, $client);
-            $discountedPrice = $effectivePrice;
-            $hasDiscount = false;
-            $discountPercent = 0.0;
-
-            if ($resolved !== null) {
-                $hasDiscount = true;
-                if ($resolved->fixedPrice !== null) {
-                    $discountedPrice = min($effectivePrice, $resolved->fixedPrice);
-                } elseif ($resolved->percent > 0) {
-                    $discountedPrice = round($effectivePrice * (1 - $resolved->percent / 100), 2);
-                    $discountPercent = $resolved->percent;
-                }
-                // Calculate percent from prices if fixed price was used
-                if ($resolved->fixedPrice !== null && $effectivePrice > 0 && $discountedPrice < $effectivePrice) {
-                    $discountPercent = round(($effectivePrice - $discountedPrice) / $effectivePrice * 100, 2);
-                }
-            }
+            // Campaign adjustment on top of the client-specific price. For a markup the
+            // raised price is the client's effective price (no discount shown).
+            $adjusted = $this->priceAdjuster->apply(
+                $clientProductPrice->getEffectivePrice(),
+                $this->discountResolver->resolveDiscount($product, $client)
+            );
 
             $formattedProducts[] = [
                 '@id' => '/api/v1/products/' . $product->getId(),
@@ -195,10 +183,10 @@ class ClientProductController extends AbstractController
                 'regularPrice' => $product->getPrice(),
                 'clientPrice' => $clientProductPrice->getPrice(),
                 'discountPercentage' => $clientProductPrice->getDiscountPercentage(),
-                'effectivePrice' => $effectivePrice,
-                'discountedPrice' => round($discountedPrice, 2),
-                'discountPercent' => $discountPercent,
-                'hasDiscount' => $hasDiscount,
+                'effectivePrice' => $adjusted->originalPriceForDisplay,
+                'discountedPrice' => $adjusted->finalPrice,
+                'discountPercent' => $adjusted->discountPercentForDisplay,
+                'hasDiscount' => $adjusted->isDiscount,
                 'isValid' => $clientProductPrice->isValid(),
                 'validFrom' => $clientProductPrice->getValidFrom()?->format('Y-m-d\TH:i:sP'),
                 'validUntil' => $clientProductPrice->getValidUntil()?->format('Y-m-d\TH:i:sP'),

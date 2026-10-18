@@ -4,11 +4,18 @@ namespace App\Serializer;
 
 use App\Entity\Product;
 use App\Service\DiscountResolver;
+use App\Service\PriceAdjuster;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
+/**
+ * Adds the current client's price adjustment to every serialized Product:
+ * `hasDiscount`, `campaignDiscountPercent` (positive, rendered as "-X%"),
+ * `discountedPrice`, `discountSource`. A markup replaces `price` with the raised
+ * price and leaves the discount fields empty. Math lives in PriceAdjuster.
+ */
 class ProductDiscountNormalizer implements NormalizerInterface, NormalizerAwareInterface
 {
     use NormalizerAwareTrait;
@@ -17,6 +24,7 @@ class ProductDiscountNormalizer implements NormalizerInterface, NormalizerAwareI
 
     public function __construct(
         private DiscountResolver $discountResolver,
+        private PriceAdjuster $priceAdjuster,
         private Security $security
     ) {}
 
@@ -35,22 +43,20 @@ class ProductDiscountNormalizer implements NormalizerInterface, NormalizerAwareI
         }
 
         $resolved = $this->discountResolver->resolveDiscount($object, $client);
+        $basePrice = (float) ($data['price'] ?? $object->getPrice());
+        $adjusted = $this->priceAdjuster->apply($basePrice, $resolved);
 
-        if ($resolved !== null) {
-            $basePrice = (float) ($data['price'] ?? $object->getPrice());
-            $discountedPrice = $basePrice;
-
-            if ($resolved->fixedPrice !== null) {
-                $discountedPrice = min($basePrice, $resolved->fixedPrice);
-            } elseif ($resolved->percent > 0) {
-                $discountedPrice = round($basePrice * (1 - $resolved->percent / 100), 2);
-            }
-
+        if ($adjusted->isDiscount) {
+            // Shown as: old price, "-X%", new price.
             $data['hasDiscount'] = true;
-            $data['campaignDiscountPercent'] = $resolved->percent;
-            $data['discountedPrice'] = round($discountedPrice, 2);
-            $data['discountSource'] = $resolved->source;
+            $data['campaignDiscountPercent'] = $adjusted->discountPercentForDisplay;
+            $data['discountedPrice'] = $adjusted->finalPrice;
+            $data['discountSource'] = $resolved?->source;
         } else {
+            // A markup is simply the client's price: no discount fields are set.
+            if ($adjusted->isMarkup && array_key_exists('price', $data)) {
+                $data['price'] = $adjusted->finalPrice;
+            }
             $data['hasDiscount'] = false;
             $data['campaignDiscountPercent'] = 0;
             $data['discountedPrice'] = null;
