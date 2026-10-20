@@ -5,7 +5,7 @@ namespace App\Serializer;
 use App\Entity\Product;
 use App\Service\DiscountResolver;
 use App\Service\PriceAdjuster;
-use Symfony\Bundle\SecurityBundle\Security;
+use App\Service\PricingClientResolver;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -15,6 +15,10 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * `hasDiscount`, `campaignDiscountPercent` (positive, rendered as "-X%"),
  * `discountedPrice`, `discountSource`. A markup replaces `price` with the raised
  * price and leaves the discount fields empty. Math lives in PriceAdjuster.
+ *
+ * "Current client" is the user's own company, or the client named by
+ * `?forClient=<id>` (client agents / admins) — see PricingClientResolver, which
+ * also throws the 400/403/404 for a bad or unauthorised value.
  */
 class ProductDiscountNormalizer implements NormalizerInterface, NormalizerAwareInterface
 {
@@ -25,7 +29,7 @@ class ProductDiscountNormalizer implements NormalizerInterface, NormalizerAwareI
     public function __construct(
         private DiscountResolver $discountResolver,
         private PriceAdjuster $priceAdjuster,
-        private Security $security
+        private PricingClientResolver $pricingClientResolver
     ) {}
 
     public function normalize(mixed $object, ?string $format = null, array $context = []): array|string|int|float|bool|\ArrayObject|null
@@ -36,11 +40,7 @@ class ProductDiscountNormalizer implements NormalizerInterface, NormalizerAwareI
         $data = $this->normalizer->normalize($object, $format, $context);
 
         /** @var Product $object */
-        $client = null;
-        $user = $this->security->getUser();
-        if ($user && method_exists($user, 'getClient')) {
-            $client = $user->getClient();
-        }
+        $client = $this->pricingClientResolver->resolve();
 
         $resolved = $this->discountResolver->resolveDiscount($object, $client);
         $basePrice = (float) ($data['price'] ?? $object->getPrice());

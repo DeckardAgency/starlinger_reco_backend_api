@@ -54,14 +54,45 @@ use ApiPlatform\OpenApi\Model;
                         required: false,
                         schema: ['type' => 'integer', 'minimum' => 1, 'maximum' => 20, 'default' => 5]
                     ),
+                    new Model\Parameter(
+                        name: 'forClient',
+                        in: 'query',
+                        description: self::FOR_CLIENT_PARAMETER_DESCRIPTION,
+                        required: false,
+                        schema: ['type' => 'integer', 'minimum' => 1]
+                    ),
                 ],
             ),
         ),
-        new Get(normalizationContext: ['groups' => ['product:read', 'product:item', 'media_item:read']]),
+        new Get(
+            normalizationContext: ['groups' => ['product:read', 'product:item', 'media_item:read']],
+            openapi: new Model\Operation(
+                parameters: [
+                    new Model\Parameter(
+                        name: 'forClient',
+                        in: 'query',
+                        description: self::FOR_CLIENT_PARAMETER_DESCRIPTION,
+                        required: false,
+                        schema: ['type' => 'integer', 'minimum' => 1]
+                    ),
+                ],
+            ),
+        ),
         new GetCollection(
             paginationItemsPerPage: 30,
             paginationClientItemsPerPage: true,
-            normalizationContext: ['groups' => ['product:read', 'media_item:read']]
+            normalizationContext: ['groups' => ['product:read', 'media_item:read']],
+            openapi: new Model\Operation(
+                parameters: [
+                    new Model\Parameter(
+                        name: 'forClient',
+                        in: 'query',
+                        description: self::FOR_CLIENT_PARAMETER_DESCRIPTION,
+                        required: false,
+                        schema: ['type' => 'integer', 'minimum' => 1]
+                    ),
+                ],
+            ),
         ),
         new GetCollection(
             uriTemplate: '/products/export/excel',
@@ -118,6 +149,13 @@ use ApiPlatform\OpenApi\Model;
 #[ApiFilter(ProductSearchFilter::class)]
 class Product
 {
+    /**
+     * `?forClient=<id>` on product reads — see App\Service\PricingClientResolver.
+     */
+    private const FOR_CLIENT_PARAMETER_DESCRIPTION = 'Price the parts as this client sees them (its discounts and markups), '
+        . 'e.g. a client agent shopping on behalf of a managed client. Admins may name any client, client agents only '
+        . 'clients their company manages (otherwise 403); unknown id: 404. Default: the caller\'s own company.';
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column(type: 'integer')]
