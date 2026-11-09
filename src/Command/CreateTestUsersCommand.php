@@ -39,7 +39,9 @@ class CreateTestUsersCommand extends Command
             ['email' => 'super@starlinger.com', 'firstName' => 'Super', 'lastName' => 'Admin', 'roles' => ['ROLE_ADMIN']],
             ['email' => 'admin@starlinger.com', 'firstName' => 'Admin', 'lastName' => 'User', 'roles' => ['ROLE_ADMIN']],
             ['email' => 'clientadmin@starlinger.com', 'firstName' => 'Client', 'lastName' => 'Admin', 'roles' => ['ROLE_CLIENT_ADMIN']],
-            ['email' => 'recouser@starlinger.com', 'firstName' => 'Reco', 'lastName' => 'User', 'roles' => ['ROLE_USER']],
+            // A plain customer. ROLE_USER alone only means "authenticated" — the webshop
+            // shows the cart/checkout for ROLE_CLIENT, so the test customer must carry it.
+            ['email' => 'recouser@starlinger.com', 'firstName' => 'Reco', 'lastName' => 'User', 'roles' => ['ROLE_CLIENT']],
         ];
 
         $repo = $this->em->getRepository(User::class);
