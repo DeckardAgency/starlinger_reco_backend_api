@@ -532,6 +532,24 @@ class Client
         return $this->addresses;
     }
 
+    /**
+     * True when at least one active delivery address exists. Checkout needs a shipping
+     * address, so users of a client without one cannot place orders — both frontends
+     * flag this (admin client list/detail, webshop banner) instead of re-deriving it.
+     */
+    #[Groups(['client:read', 'client:read:details'])]
+    #[SerializedName('hasActiveDeliveryAddress')]
+    public function getHasActiveDeliveryAddress(): bool
+    {
+        foreach ($this->addresses as $address) {
+            if ($address->getIsActive() && $address->getIsDelivery()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function addAddress(Address $address): static
     {
         if (!$this->addresses->contains($address)) {

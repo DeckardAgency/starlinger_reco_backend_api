@@ -43,6 +43,7 @@ class MeController extends AbstractController
                 'code' => $client->getCode(),
                 'isActive' => $client->getIsActive(),
                 'isArchived' => $client->getIsArchived(),
+                'hasActiveDeliveryAddress' => $client->getHasActiveDeliveryAddress(),
             ],
         ]);
     }
