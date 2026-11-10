@@ -963,7 +963,8 @@ class ImportProductionDataCommand extends Command
             };
         }
 
-        return array_unique($recoRoles) ?: ['ROLE_USER'];
+        // Never produce a ROLE_USER-only account (can log in, can do nothing).
+        return array_unique($recoRoles) ?: ['ROLE_CLIENT'];
     }
 
     private function importAddresses(Connection $legacy, Connection $conn, string $defaultPassword): void

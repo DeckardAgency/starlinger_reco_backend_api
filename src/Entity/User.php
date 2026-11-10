@@ -26,6 +26,8 @@ use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
+use App\Security\Roles;
 
 #[ApiResource(
     operations: [
@@ -212,6 +214,22 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         $roles[] = 'ROLE_USER';
 
         return array_unique($roles);
+    }
+
+    /**
+     * A user needs at least one functional role (see Roles::FUNCTIONAL): with ROLE_USER
+     * alone they can log in but see no cart, no orders and no error — a silent dead
+     * account. Rejecting it at write time keeps every entry point (admin API, client
+     * admins, invitations) honest.
+     */
+    #[Assert\Callback]
+    public function validateFunctionalRole(ExecutionContextInterface $context): void
+    {
+        if (!Roles::hasFunctional($this->roles)) {
+            $context->buildViolation('The user needs a role (Client, Client Admin, Client Agent, Finance or Admin).')
+                ->atPath('roles')
+                ->addViolation();
+        }
     }
 
     public function setRoles(array $roles): static

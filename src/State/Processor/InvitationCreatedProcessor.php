@@ -2,6 +2,7 @@
 
 namespace App\State\Processor;
 
+use App\Security\Roles;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
 use App\Entity\UserInvitation;
@@ -103,10 +104,9 @@ class InvitationCreatedProcessor implements ProcessorInterface
             $data->setCreatedBy($currentUser);
         }
 
-        // Set default roles if not provided
-        if (empty($data->getRoles())) {
-            $data->setRoles(['ROLE_USER']);
-        }
+        // An invitation without a functional role would create a user who can log in but
+        // do nothing (ROLE_USER only), so default to the customer role.
+        $data->setRoles(Roles::withFunctionalDefault($data->getRoles() ?: []));
 
         // Persist the invitation
         $this->entityManager->persist($data);
