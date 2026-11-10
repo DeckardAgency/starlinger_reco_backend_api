@@ -97,7 +97,46 @@ final class UserFunctionalRoleApiTest extends WebTestCase
         self::assertContains('ROLE_CLIENT', $invitation->getRoles(), 'ROLE_USER-only invitations used to create dead accounts');
     }
 
+    public function testHasRoleFilterFindsRoleLessAccounts(): void
+    {
+        // Such accounts can no longer be created through the API; legacy data can still
+        // hold them, so the admin list needs the filter. Persist one directly.
+        $dead = (new User())
+            ->setEmail('dead-' . $this->suffix . '@example.test')
+            ->setFirstName('Dead')
+            ->setLastName('Account');
+        $dead->setPassword('not-used-in-tests');
+        $dead->setRoles(['ROLE_USER']);
+        $dead->setClient($this->em->find(Client::class, $this->company->getId()));
+        $this->em->persist($dead);
+        $this->em->flush();
+
+        $without = $this->get('/api/v1/users?hasRole=false&itemsPerPage=200');
+        self::assertSame(200, $without['status']);
+        $emails = array_column($without['body']['member'] ?? [], 'email');
+        self::assertContains($dead->getEmail(), $emails);
+        self::assertNotContains($this->admin->getEmail(), $emails);
+
+        $with = $this->get('/api/v1/users?hasRole=true&email=' . urlencode($dead->getEmail()));
+        self::assertSame(200, $with['status']);
+        self::assertSame(0, $with['body']['totalItems'] ?? null);
+    }
+
     // --- helpers ------------------------------------------------------------
+
+    /** @return array{status:int, body:array<mixed>} */
+    private function get(string $url): array
+    {
+        $token = self::getContainer()->get(JWTTokenManagerInterface::class)->create($this->admin);
+        $this->client->request('GET', $url, [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer ' . $token,
+            'HTTP_ACCEPT' => 'application/ld+json',
+        ]);
+        $response = $this->client->getResponse();
+        $body = json_decode($response->getContent() ?: 'null', true);
+
+        return ['status' => $response->getStatusCode(), 'body' => is_array($body) ? $body : []];
+    }
 
     /** @return array<string,mixed> */
     private function userPayload(string $tag, array $roles): array

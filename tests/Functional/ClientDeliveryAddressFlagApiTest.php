@@ -65,6 +65,7 @@ final class ClientDeliveryAddressFlagApiTest extends WebTestCase
 
         self::assertFalse($this->meFlag(), 'no address yet → /api/me says false');
         self::assertFalse($this->clientFlag($id), 'no address yet → client resource says false');
+        self::assertTrue($this->listedAsMissingAddress($id), 'no address yet → listed by ?hasActiveDeliveryAddress=false');
 
         $this->addAddress(isDelivery: false, isActive: true);   // billing only
         self::assertFalse($this->meFlag(), 'billing-only address does not count');
@@ -75,6 +76,7 @@ final class ClientDeliveryAddressFlagApiTest extends WebTestCase
         $this->addAddress(isDelivery: true, isActive: true);
         self::assertTrue($this->meFlag(), 'active delivery address → /api/me says true');
         self::assertTrue($this->clientFlag($id), 'active delivery address → client resource says true');
+        self::assertFalse($this->listedAsMissingAddress($id), 'active delivery address → no longer listed as missing');
     }
 
     // --- helpers ------------------------------------------------------------
@@ -95,6 +97,14 @@ final class ClientDeliveryAddressFlagApiTest extends WebTestCase
         self::assertArrayHasKey('hasActiveDeliveryAddress', $response['body']);
 
         return $response['body']['hasActiveDeliveryAddress'];
+    }
+
+    private function listedAsMissingAddress(int $id): bool
+    {
+        $response = $this->request('GET', '/api/v1/clients?hasActiveDeliveryAddress=false&code=' . urlencode($this->company->getCode()), $this->admin);
+        self::assertSame(200, $response['status']);
+
+        return in_array($id, array_column($response['body']['member'] ?? [], 'id'), true);
     }
 
     private function addAddress(bool $isDelivery, bool $isActive): void
