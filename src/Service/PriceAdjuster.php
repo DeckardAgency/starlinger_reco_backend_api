@@ -3,7 +3,7 @@
 namespace App\Service;
 
 /**
- * The one place where a resolved discount becomes a price. Used by the product
+ * The one place where resolved adjustments become a price. Used by the product
  * serializer (shop listing), the order processor (price snapshot) and the
  * client-product endpoints so the arithmetic cannot drift between them.
  *
@@ -13,9 +13,38 @@ namespace App\Service;
  *  - percentage: round(base * (1 + percent / 100), 2). Negative = discount,
  *    positive = markup.
  *  - no adjustment (null or 0 %): the base price, unchanged.
+ *  - markup AND discount for the same client (applyAdjustments): the markup is
+ *    applied first and becomes the client's regular price; the discount (or
+ *    fixed price) is then applied to — and shown against — that marked-up price.
  */
 final class PriceAdjuster
 {
+    /**
+     * Compose the client's markup and discount into one price.
+     */
+    public function applyAdjustments(float $basePrice, ResolvedAdjustments $adjustments): AdjustedPrice
+    {
+        $markedUp = $this->apply($basePrice, $adjustments->markup);
+        if ($adjustments->discount === null) {
+            return $markedUp;
+        }
+
+        $discounted = $this->apply($markedUp->finalPrice, $adjustments->discount);
+        if (!$discounted->isDiscount) {
+            // e.g. a fixed price that does not undercut the marked-up price.
+            return $markedUp;
+        }
+
+        return new AdjustedPrice(
+            finalPrice: $discounted->finalPrice,
+            isDiscount: true,
+            isMarkup: $markedUp->isMarkup,
+            discountPercentForDisplay: $discounted->discountPercentForDisplay,
+            // The marked-up price is what the client sees struck through.
+            originalPriceForDisplay: $markedUp->finalPrice,
+        );
+    }
+
     public function apply(float $basePrice, ?ResolvedDiscount $resolved): AdjustedPrice
     {
         if ($resolved === null) {

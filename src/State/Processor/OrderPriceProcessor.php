@@ -384,18 +384,20 @@ final class OrderPriceProcessor implements ProcessorInterface
                 }
             }
 
-            // Apply the campaign adjustment (discount or markup) on top of the base price.
-            $adjusted = $this->priceAdjuster->apply(
+            // Apply the campaign adjustments (markup and/or discount) on top of the base price.
+            $adjusted = $this->priceAdjuster->applyAdjustments(
                 $basePrice,
-                $this->discountResolver->resolveDiscount($product, $itemClient)
+                $this->discountResolver->resolveAdjustments($product, $itemClient)
             );
             $unitPrice = $adjusted->finalPrice;
 
-            // Snapshot. A markup IS the client's price, so it is also the "original":
-            // no discount is recorded and the order's subtotalBeforeDiscount/totalDiscount
-            // stay clean. Otherwise the catalog price is the reference, so a client-specific
-            // price and/or a discount both show up as the line's discount (as before).
-            $originalPrice = $adjusted->isMarkup ? $unitPrice : $product->getPrice();
+            // Snapshot. A markup IS the client's price, so the marked-up price is the
+            // "original": a markup alone records no discount and the order's
+            // subtotalBeforeDiscount/totalDiscount stay clean; a discount on top shows
+            // up against the marked-up price — exactly what the shop displayed.
+            // Otherwise the catalog price is the reference, so a client-specific price
+            // and/or a discount both show up as the line's discount (as before).
+            $originalPrice = $adjusted->isMarkup ? $adjusted->originalPriceForDisplay : $product->getPrice();
             $item->setOriginalUnitPrice($originalPrice);
             $item->setUnitPrice($unitPrice);
             $item->setIsCustomPrice($isCustomPrice);

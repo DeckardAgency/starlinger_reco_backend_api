@@ -162,9 +162,9 @@ class ClientProductController extends AbstractController
 
             // Campaign adjustment on top of the client-specific price. For a markup the
             // raised price is the client's effective price (no discount shown).
-            $adjusted = $this->priceAdjuster->apply(
+            $adjusted = $this->priceAdjuster->applyAdjustments(
                 $clientProductPrice->getEffectivePrice(),
-                $this->discountResolver->resolveDiscount($product, $client)
+                $this->discountResolver->resolveAdjustments($product, $client)
             );
 
             $formattedProducts[] = [

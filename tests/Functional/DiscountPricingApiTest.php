@@ -41,6 +41,8 @@ final class DiscountPricingApiTest extends WebTestCase
     private User $plainUser;
     /** Two client-wide discounts: −10 (lower id) and −30. */
     private User $twoDiscountsUser;
+    /** +10 % client-wide markup AND −20 % on P2 AND fixed 55 on P3 (Nov 2026: both apply). */
+    private User $bothUser;
 
     private Product $p1;
     private Product $p2;
@@ -60,12 +62,14 @@ final class DiscountPricingApiTest extends WebTestCase
         $markupClient = $this->makeClient('MARK');
         $plainClient = $this->makeClient('PLAIN');
         $twoClient = $this->makeClient('TWO');
+        $bothClient = $this->makeClient('BOTH');
 
         $this->admin = $this->makeUser('admin', ['ROLE_ADMIN'], null);
         $this->discountUser = $this->makeUser('disc', ['ROLE_CLIENT'], $this->discountClient);
         $this->markupUser = $this->makeUser('mark', ['ROLE_CLIENT'], $markupClient);
         $this->plainUser = $this->makeUser('plain', ['ROLE_CLIENT'], $plainClient);
         $this->twoDiscountsUser = $this->makeUser('two', ['ROLE_CLIENT'], $twoClient);
+        $this->bothUser = $this->makeUser('both', ['ROLE_CLIENT'], $bothClient);
 
         $this->p1 = $this->makeProduct('p1');
         $this->p2 = $this->makeProduct('p2');
@@ -80,11 +84,16 @@ final class DiscountPricingApiTest extends WebTestCase
         $this->makeDiscount('inactive -50', '-50.0000', [$plainClient])->setIsActive(false);
         $this->makeDiscount('two first -10', '-10.0000', [$twoClient]);
         $this->makeDiscount('two second -30', '-30.0000', [$twoClient]);
+        $this->makeDiscount('both markup +10', '10.0000', [$bothClient]);
+        $bothSpecific = $this->makeDiscount('both specific -20', '-20.0000', [$bothClient]);
+        $bothFixed = $this->makeDiscount('both fixed 55', '-5.0000', [$bothClient]);
         $this->em->flush();
 
         $this->em->persist((new ProductDiscount())->setProductId($this->p2->getId())->setDiscountId($specific->getId()));
         $this->em->persist((new ProductDiscount())->setProductId($this->p3->getId())->setDiscountId($fixed->getId())->setDiscountPriceBase('55.0000'));
         $this->em->persist((new ProductDiscount())->setProductId($this->p4->getId())->setDiscountId($rebate->getId())->setRebate('-25.0000'));
+        $this->em->persist((new ProductDiscount())->setProductId($this->p2->getId())->setDiscountId($bothSpecific->getId()));
+        $this->em->persist((new ProductDiscount())->setProductId($this->p3->getId())->setDiscountId($bothFixed->getId())->setDiscountPriceBase('55.0000'));
         $this->em->flush();
     }
 
@@ -237,6 +246,44 @@ final class DiscountPricingApiTest extends WebTestCase
         self::assertSame(240.0, (float) $r['body']['totalAmount']);
     }
 
+    // --- markup AND discount for the same client (Nov 2026) --------------------
+
+    public function testMarkupAndDiscountApplyTogether(): void
+    {
+        // No product link: the markup alone → the regular price is 110.
+        $p1 = $this->getProduct($this->p1, $this->bothUser);
+        self::assertSame(110.0, (float) $p1['price']);
+        self::assertFalse($p1['hasDiscount']);
+
+        // Product-specific -20 % on top of the +10 % markup, shown against 110.
+        $p2 = $this->getProduct($this->p2, $this->bothUser);
+        self::assertSame(110.0, (float) $p2['price'], 'The marked-up price is the regular price.');
+        self::assertTrue($p2['hasDiscount']);
+        self::assertSame(20.0, (float) $p2['campaignDiscountPercent']);
+        self::assertSame(88.0, (float) $p2['discountedPrice'], '110 - 20 %');
+
+        // A fixed price is the final price; the markup is not added on top of it.
+        $p3 = $this->getProduct($this->p3, $this->bothUser);
+        self::assertSame(110.0, (float) $p3['price']);
+        self::assertTrue($p3['hasDiscount']);
+        self::assertSame(55.0, (float) $p3['discountedPrice']);
+        self::assertSame(50.0, (float) $p3['campaignDiscountPercent'], 'Shown against the marked-up 110.');
+    }
+
+    public function testOrderSnapshotsTheMarkedUpPriceAsOriginalAndTheDiscountOnTop(): void
+    {
+        $r = $this->postOrder($this->bothUser, $this->p2, 1);
+        self::assertSame(201, $r['status'], json_encode($r['body']));
+
+        $item = $r['body']['items'][0];
+        self::assertSame(88.0, (float) $item['unitPrice']);
+        self::assertSame(110.0, (float) $item['originalUnitPrice'], 'What the shop showed struck through.');
+        self::assertSame(20.0, (float) $item['discountPercent']);
+        self::assertSame(110.0, (float) $r['body']['subtotalBeforeDiscount']);
+        self::assertSame(22.0, (float) $r['body']['totalDiscount']);
+        self::assertSame(88.0, (float) $r['body']['totalAmount']);
+    }
+
     public function testOrderWithDiscountSnapshotsOriginalPriceAndPercent(): void
     {
         $r = $this->postOrder($this->discountUser, $this->p1, 1);
@@ -353,8 +400,8 @@ final class DiscountPricingApiTest extends WebTestCase
         self::assertSame(200, $r['status'], json_encode($r['body']));
 
         $percents = array_map(static fn (array $d) => (float) $d['adjustmentPercent'], $r['body']['member']);
-        self::assertSame(7, $r['body']['totalItems'], 'All active test discounts, the inactive one filtered out.');
-        self::assertSame([-40.0, -30.0, -20.0, -10.0, -5.0, 10.0, 20.0], $percents);
+        self::assertSame(10, $r['body']['totalItems'], 'All active test discounts, the inactive one filtered out.');
+        self::assertSame([-40.0, -30.0, -20.0, -20.0, -10.0, -5.0, -5.0, 10.0, 10.0, 20.0], $percents);
     }
 
     public function testProductDiscountHasNoValidityDates(): void

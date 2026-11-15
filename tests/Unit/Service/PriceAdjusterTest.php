@@ -6,6 +6,7 @@ namespace App\Tests\Unit\Service;
 
 use App\Service\AdjustedPrice;
 use App\Service\PriceAdjuster;
+use App\Service\ResolvedAdjustments;
 use App\Service\ResolvedDiscount;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -91,6 +92,37 @@ final class PriceAdjusterTest extends TestCase
     {
         self::assertSame(12.5, $this->adjuster->apply(100.0, $this->percent(-12.5))->discountPercentForDisplay);
         self::assertSame(0.0, $this->adjuster->apply(100.0, $this->percent(12.5))->discountPercentForDisplay);
+    }
+
+    // --- markup AND discount for the same client (Nov 2026) --------------------
+
+    public function testMarkupThenDiscountComposeAgainstTheMarkedUpPrice(): void
+    {
+        $r = $this->adjuster->applyAdjustments(100.0, new ResolvedAdjustments($this->percent(10), $this->percent(-20)));
+
+        // 100 → 110 (markup = the client's regular price) → 88 (-20 % of 110).
+        $this->assertPrice($r, final: 88.0, isDiscount: true, isMarkup: true, display: 20.0, original: 110.0);
+    }
+
+    public function testFixedPriceIsAbsoluteAndShownAgainstTheMarkedUpPrice(): void
+    {
+        $r = $this->adjuster->applyAdjustments(100.0, new ResolvedAdjustments($this->percent(10), new ResolvedDiscount(0.0, 55.0, 'campaign')));
+
+        $this->assertPrice($r, final: 55.0, isDiscount: true, isMarkup: true, display: 50.0, original: 110.0);
+    }
+
+    public function testFixedPriceAboveTheMarkedUpPriceLeavesTheMarkup(): void
+    {
+        $r = $this->adjuster->applyAdjustments(100.0, new ResolvedAdjustments($this->percent(10), new ResolvedDiscount(0.0, 150.0, 'campaign')));
+
+        $this->assertPrice($r, final: 110.0, isDiscount: false, isMarkup: true, display: 0.0, original: 110.0);
+    }
+
+    public function testOnlyOneSideBehavesLikeTheSingleAdjustment(): void
+    {
+        $this->assertPrice($this->adjuster->applyAdjustments(100.0, new ResolvedAdjustments($this->percent(20), null)), final: 120.0, isDiscount: false, isMarkup: true, display: 0.0, original: 120.0);
+        $this->assertPrice($this->adjuster->applyAdjustments(100.0, new ResolvedAdjustments(null, $this->percent(-20))), final: 80.0, isDiscount: true, isMarkup: false, display: 20.0, original: 100.0);
+        $this->assertPrice($this->adjuster->applyAdjustments(100.0, ResolvedAdjustments::none()), final: 100.0, isDiscount: false, isMarkup: false, display: 0.0, original: 100.0);
     }
 
     private function percent(float $percent): ResolvedDiscount

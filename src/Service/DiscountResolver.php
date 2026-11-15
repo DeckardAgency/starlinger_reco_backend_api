@@ -10,12 +10,14 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
- * Picks THE price adjustment for a product + client. Only active discounts that
+ * Picks the price adjustments for a product + client: at most ONE markup and at
+ * most ONE discount, which apply together (Nov 2026). Only active discounts that
  * list the client are considered (guests and unlisted clients get nothing).
- * Precedence: a discount linked to the product (ProductDiscount) beats a
- * client-wide one (no product links); within a tier the lowest id wins. The
- * returned value is a fixed price override, or a signed percentage (negative =
- * discount, positive = markup) — PriceAdjuster turns it into a price.
+ * Precedence, separately for the markup and for the discount: a discount linked
+ * to the product (ProductDiscount) beats a client-wide one (no product links);
+ * within a tier the lowest id wins. A value is a fixed price override (always a
+ * discount) or a signed percentage (negative = discount, positive = markup) —
+ * PriceAdjuster turns the pair into a price.
  */
 class DiscountResolver implements ResetInterface
 {
@@ -46,31 +48,55 @@ class DiscountResolver implements ResetInterface
     private ?array $productSpecificData = null;
 
     /**
-     * Resolve the applicable campaign adjustment for a product + client combination.
+     * Resolve the markup and the discount that apply to a product + client. The
+     * candidates are walked in precedence order (product-specific links first, then
+     * client-wide, each by id) and the first markup and the first discount win.
      */
-    public function resolveDiscount(Product $product, ?Client $client): ?ResolvedDiscount
+    public function resolveAdjustments(Product $product, ?Client $client): ResolvedAdjustments
     {
         if ($client === null) {
-            return null;
+            return ResolvedAdjustments::none();
         }
 
-        // 1. Discounts linked to this product (ProductDiscount links)
-        $productSpecific = $this->findProductSpecificCampaign($product, $client);
-        if ($productSpecific !== null) {
-            return $productSpecific;
+        $markup = null;
+        $discount = null;
+        foreach ($this->candidates($product, $client) as $candidate) {
+            $isMarkup = $candidate->fixedPrice === null && $candidate->percent > 0;
+            if ($isMarkup) {
+                $markup ??= $candidate;
+            } else {
+                $discount ??= $candidate;
+            }
+            if ($markup !== null && $discount !== null) {
+                break;
+            }
         }
 
-        // 2. Client-wide discounts (no products linked = applies to all products)
-        return $this->findClientWideCampaign($product, $client);
+        return new ResolvedAdjustments($markup, $discount);
     }
 
-    private function findProductSpecificCampaign(Product $product, Client $client): ?ResolvedDiscount
+    /**
+     * Every applicable adjustment in precedence order.
+     *
+     * @return iterable<ResolvedDiscount>
+     */
+    private function candidates(Product $product, Client $client): iterable
+    {
+        // 1. Discounts linked to this product (ProductDiscount links)
+        yield from $this->productSpecificCandidates($product, $client);
+
+        // 2. Client-wide discounts (no products linked = applies to all products)
+        yield from $this->clientWideCandidates($product, $client);
+    }
+
+    /** @return iterable<ResolvedDiscount> */
+    private function productSpecificCandidates(Product $product, Client $client): iterable
     {
         $data = $this->getProductSpecificData();
 
         $productDiscounts = $data['pdsByProduct'][$product->getId()] ?? [];
         if (empty($productDiscounts)) {
-            return null;
+            return;
         }
 
         // Iterate discounts in id order, considering only those linked to this product.
@@ -92,7 +118,8 @@ class DiscountResolver implements ResetInterface
 
             // Value precedence: fixed price override → per-link rebate → the discount's percent.
             if ($pd->getDiscountPriceBase() !== null) {
-                return new ResolvedDiscount(0.0, (float) $pd->getDiscountPriceBase(), 'campaign');
+                yield new ResolvedDiscount(0.0, (float) $pd->getDiscountPriceBase(), 'campaign');
+                continue;
             }
 
             $percent = (float) ($pd->getRebate() ?? 0);
@@ -101,11 +128,9 @@ class DiscountResolver implements ResetInterface
             }
 
             if ($percent != 0.0) {
-                return new ResolvedDiscount($percent, null, 'campaign');
+                yield new ResolvedDiscount($percent, null, 'campaign');
             }
         }
-
-        return null;
     }
 
     /**
@@ -159,8 +184,10 @@ class DiscountResolver implements ResetInterface
     /**
      * Discounts that target this client but have NO products linked: they apply to
      * ALL products (within productTypes, if set) for that client.
+     *
+     * @return iterable<ResolvedDiscount>
      */
-    private function findClientWideCampaign(Product $product, Client $client): ?ResolvedDiscount
+    private function clientWideCandidates(Product $product, Client $client): iterable
     {
         $discounts = $this->getActiveDiscounts();
         $linkedDiscountIds = $this->getLinkedDiscountIds();
@@ -181,11 +208,9 @@ class DiscountResolver implements ResetInterface
 
             $percent = (float) ($discount->getAdjustmentPercent() ?? 0);
             if ($percent != 0.0) {
-                return new ResolvedDiscount($percent, null, 'campaign');
+                yield new ResolvedDiscount($percent, null, 'campaign');
             }
         }
-
-        return null;
     }
 
     /**

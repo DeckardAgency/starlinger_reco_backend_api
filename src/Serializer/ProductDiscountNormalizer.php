@@ -14,7 +14,8 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * Adds the current client's price adjustment to every serialized Product:
  * `hasDiscount`, `campaignDiscountPercent` (positive, rendered as "-X%"),
  * `discountedPrice`, `discountSource`. A markup replaces `price` with the raised
- * price and leaves the discount fields empty. Math lives in PriceAdjuster.
+ * price; a discount for the same client is then shown against that raised price.
+ * Math lives in PriceAdjuster.
  *
  * "Current client" is the user's own company, or the client named by
  * `?forClient=<id>` (client agents / admins) — see PricingClientResolver, which
@@ -42,21 +43,23 @@ class ProductDiscountNormalizer implements NormalizerInterface, NormalizerAwareI
         /** @var Product $object */
         $client = $this->pricingClientResolver->resolve();
 
-        $resolved = $this->discountResolver->resolveDiscount($object, $client);
+        $adjustments = $this->discountResolver->resolveAdjustments($object, $client);
         $basePrice = (float) ($data['price'] ?? $object->getPrice());
-        $adjusted = $this->priceAdjuster->apply($basePrice, $resolved);
+        $adjusted = $this->priceAdjuster->applyAdjustments($basePrice, $adjustments);
+
+        // A markup is simply the client's (regular) price; a discount is then shown
+        // against that price. No discount fields are set for a markup alone.
+        if ($adjusted->isMarkup && array_key_exists('price', $data)) {
+            $data['price'] = $adjusted->originalPriceForDisplay;
+        }
 
         if ($adjusted->isDiscount) {
-            // Shown as: old price, "-X%", new price.
+            // Shown as: (marked-up) price, "-X%", new price.
             $data['hasDiscount'] = true;
             $data['campaignDiscountPercent'] = $adjusted->discountPercentForDisplay;
             $data['discountedPrice'] = $adjusted->finalPrice;
-            $data['discountSource'] = $resolved?->source;
+            $data['discountSource'] = $adjustments->discount?->source;
         } else {
-            // A markup is simply the client's price: no discount fields are set.
-            if ($adjusted->isMarkup && array_key_exists('price', $data)) {
-                $data['price'] = $adjusted->finalPrice;
-            }
             $data['hasDiscount'] = false;
             $data['campaignDiscountPercent'] = 0;
             $data['discountedPrice'] = null;
