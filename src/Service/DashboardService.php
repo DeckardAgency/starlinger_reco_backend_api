@@ -217,6 +217,7 @@ class DashboardService
             Order::STATUS_NEW => 'New',
             Order::STATUS_IN_PROCESS => 'In process',
             Order::STATUS_WAITING_FOR_PAYMENT => 'Waiting for payment',
+            Order::STATUS_PAID => 'Paid',
             Order::STATUS_READY_FOR_SHIPMENT => 'Ready for shipment',
             Order::STATUS_SHIPPED => 'Shipped',
             Order::STATUS_DELIVERED => 'Delivered',

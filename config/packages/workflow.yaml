@@ -18,6 +18,7 @@ framework:
                 - ready_for_shipment
                 - shipped
                 - delivered
+                - paid
                 - canceled
                 - reversal
             transitions:
@@ -25,16 +26,19 @@ framework:
                     from: draft
                     to: new
                 start_processing:
-                    from: new
+                    from: [new, paid]
                     to: in_process
                 await_payment:
-                    from: [new, in_process]
+                    from: [new, in_process, ready_for_shipment, shipped, delivered]
                     to: waiting_for_payment
+                # Payment registered: "paid" is a status of its own (Nov 2026). It is a
+                # resting state for prepayment (then processing continues) and the final
+                # state for orders paid after delivery. Order.paidAt records the fact.
                 payment_received:
-                    from: waiting_for_payment
-                    to: in_process
+                    from: [waiting_for_payment, delivered]
+                    to: paid
                 ready_to_ship:
-                    from: in_process
+                    from: [in_process, paid]
                     to: ready_for_shipment
                 ship:
                     from: ready_for_shipment
@@ -43,7 +47,7 @@ framework:
                     from: shipped
                     to: delivered
                 cancel:
-                    from: [draft, new, in_process, waiting_for_payment, ready_for_shipment]
+                    from: [draft, new, in_process, waiting_for_payment, paid, ready_for_shipment]
                     to: canceled
                 reverse:
                     from: [delivered, shipped]

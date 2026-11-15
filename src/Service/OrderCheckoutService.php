@@ -115,6 +115,14 @@ final class OrderCheckoutService
             if ($client === null) {
                 throw new BadRequestHttpException($label . ': your account is not linked to a company; set onBehalfOfClient.');
             }
+            // Agent companies never buy for themselves: a group without a customer
+            // would be an order for the agent company (OrderPriceProcessor enforces
+            // the same per item; this names the group).
+            if ($onBehalfOf === null && $client->getIsClientAgent() && !$this->security->isGranted('ROLE_ADMIN')) {
+                throw new BadRequestHttpException(
+                    $label . ': agent companies order on behalf of their customers; set onBehalfOfClient to the customer.'
+                );
+            }
             if (isset($seenClients[$client->getId()])) {
                 throw new BadRequestHttpException(sprintf(
                     '%s: client "%s" appears in more than one group; merge its items into one group.',

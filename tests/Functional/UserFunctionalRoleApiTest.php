@@ -54,8 +54,10 @@ final class UserFunctionalRoleApiTest extends WebTestCase
                     ->setParameter('s', $like)->execute();
                 $this->em->createQuery('DELETE App\Entity\User u WHERE u.email LIKE :s')
                     ->setParameter('s', $like)->execute();
-                $this->em->createQuery('DELETE App\Entity\Client c WHERE c.code LIKE :s')
-                    ->setParameter('s', $like)->execute();
+                // The client code is 'RT-<suffix>' (no e-mail domain) — matching it with
+                // the e-mail pattern leaked one client per run and filled the test DB.
+                $this->em->createQuery('DELETE App\Entity\Client c WHERE c.code = :code')
+                    ->setParameter('code', 'RT-' . $this->suffix)->execute();
             }
         } finally {
             parent::tearDown();

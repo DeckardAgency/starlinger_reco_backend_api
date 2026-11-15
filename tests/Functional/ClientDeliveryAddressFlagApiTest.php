@@ -85,9 +85,16 @@ final class ClientDeliveryAddressFlagApiTest extends WebTestCase
     {
         $response = $this->request('GET', '/api/me', $this->member);
         self::assertSame(200, $response['status']);
-        self::assertArrayHasKey('hasActiveDeliveryAddress', $response['body']['client'] ?? []);
+        $client = $response['body']['client'] ?? [];
+        self::assertArrayHasKey('hasActiveDeliveryAddress', $client);
+        // Budget strip + agent handling in the webshop read these from /api/me too.
+        self::assertArrayHasKey('purchaseLimit', $client);
+        self::assertArrayHasKey('amountSpent', $client);
+        self::assertArrayHasKey('isClientAgent', $client);
+        self::assertFalse($client['isClientAgent']);
+        self::assertIsNumeric($client['amountSpent']);
 
-        return $response['body']['client']['hasActiveDeliveryAddress'];
+        return $client['hasActiveDeliveryAddress'];
     }
 
     private function clientFlag(int $id): ?bool

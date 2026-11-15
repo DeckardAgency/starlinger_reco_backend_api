@@ -138,14 +138,13 @@ final class AgentCheckoutApiTest extends WebTestCase
             'groups' => [
                 $this->group($this->clientB, $this->bDelivery, null, 2),              // 2 x 100, default billing
                 $this->group($this->clientC, $this->cDelivery, $this->cBilling, 3),   // 3 x 100, explicit billing
-                $this->group(null, $this->agentDelivery, null, 1),                   // own company, no billing address
             ],
         ]);
 
         self::assertSame(201, $r['status'], 'Body: ' . json_encode($r['body']));
         $reference = $r['body']['checkoutReference'] ?? '';
         self::assertMatchesRegularExpression('/^CHK-\d{8}-[A-Z0-9]{6}$/', $reference);
-        self::assertCount(3, $r['body']['orders']);
+        self::assertCount(2, $r['body']['orders']);
 
         $byClient = [];
         foreach ($r['body']['orders'] as $order) {
@@ -156,7 +155,7 @@ final class AgentCheckoutApiTest extends WebTestCase
             self::assertCount(1, $order['items']);
             $byClient[$order['onBehalfOfClient']['id'] ?? 'own'] = $order;
         }
-        self::assertEqualsCanonicalizing(['own', $this->clientB->getId(), $this->clientC->getId()], array_keys($byClient));
+        self::assertEqualsCanonicalizing([$this->clientB->getId(), $this->clientC->getId()], array_keys($byClient));
 
         $b = $byClient[$this->clientB->getId()];
         self::assertSame($this->bDelivery->getId(), $b['shippingAddressId']);
@@ -173,29 +172,50 @@ final class AgentCheckoutApiTest extends WebTestCase
         self::assertSame($this->clientC->getId(), $c['items'][0]['onBehalfOfClient']['id']);
         self::assertSame(300.0, (float) $c['totalAmount']);
 
-        $own = $byClient['own'];
-        self::assertNull($own['onBehalfOfClient'] ?? null);
-        self::assertSame($this->agentDelivery->getFullAddress(), $own['shippingAddress']);
-        self::assertNull($own['billingAddress'] ?? null, 'No billing address on file -> text stays null.');
-        self::assertNull($own['items'][0]['onBehalfOfClient'] ?? null);
-
-        // Purchase limits debited per client (not the agent for managed groups).
+        // Purchase limits debited per client (never the agent company).
         self::assertSame(200.0, $this->spentOf($this->clientB->getId()));
         self::assertSame(300.0, $this->spentOf($this->clientC->getId()));
-        self::assertSame(100.0, $this->spentOf($this->agentClient->getId()), 'Only the own-company group hits the agent\'s ledger.');
+        self::assertSame(0.0, $this->spentOf($this->agentClient->getId()));
 
-        // Persisted as 3 orders sharing the reference; one OrderCreatedMessage each, after commit.
-        self::assertSame(3, $this->orderCountFor($this->agentUser));
-        self::assertSame(3, (int) $this->em->getConnection()->fetchOne(
+        // Persisted as 2 orders sharing the reference; one OrderCreatedMessage each, after commit.
+        self::assertSame(2, $this->orderCountFor($this->agentUser));
+        self::assertSame(2, (int) $this->em->getConnection()->fetchOne(
             'SELECT COUNT(*) FROM `order` WHERE checkout_reference = :r AND is_draft = 0 AND status = \'new\'',
             ['r' => $reference]
         ));
-        self::assertSame($messagesBefore + 3, $this->messengerCount());
+        self::assertSame($messagesBefore + 2, $this->messengerCount());
 
         // The orders are listable together via the new filter.
         $list = $this->request('GET', '/api/v1/orders?checkoutReference=' . $reference, $this->agentUser);
         self::assertSame(200, $list['status']);
-        self::assertSame(3, $list['body']['totalItems'] ?? null);
+        self::assertSame(2, $list['body']['totalItems'] ?? null);
+    }
+
+    /** Agent companies never buy for themselves: a group without a customer is refused (Nov 2026). */
+    public function testAgentCompanyCannotOrderForItself(): void
+    {
+        $messagesBefore = $this->messengerCount();
+
+        $r = $this->checkout($this->agentUser, [
+            'groups' => [
+                $this->group($this->clientB, $this->bDelivery, null, 1),
+                $this->group(null, $this->agentDelivery, null, 1), // the agent's own company
+            ],
+        ]);
+
+        self::assertSame(400, $r['status'], 'Body: ' . json_encode($r['body']));
+        self::assertStringContainsString('on behalf of their customers', $r['body']['detail'] ?? $r['body']['hydra:description'] ?? '');
+        self::assertSame(0, $this->orderCountFor($this->agentUser), 'All-or-nothing: the customer group is not persisted either.');
+        self::assertSame(0.0, $this->spentOf($this->clientB->getId()));
+        self::assertSame($messagesBefore, $this->messengerCount());
+
+        // The plain POST /orders route is closed the same way.
+        $r = $this->request('POST', '/api/v1/orders', $this->agentUser, [
+            'isDraft' => false,
+            'items' => [['product' => '/api/v1/products/' . $this->product->getId(), 'quantity' => 1]],
+        ]);
+        self::assertSame(400, $r['status'], 'Body: ' . json_encode($r['body']));
+        self::assertSame(0, $this->orderCountFor($this->agentUser));
     }
 
     // --- 2. all-or-nothing on purchase limit -----------------------------------

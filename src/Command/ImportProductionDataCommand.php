@@ -242,6 +242,7 @@ class ImportProductionDataCommand extends Command
             str_contains($name, 'deliver') => 'delivered',
             str_contains($name, 'cancel') => 'canceled',
             str_contains($name, 'reversal') => 'reversal',
+            str_contains($name, 'paid') => 'paid',
             str_contains($name, 'waiting'), str_contains($name, 'payment') => 'waiting_for_payment',
             str_contains($name, 'ready'), str_contains($name, 'shipment') => 'ready_for_shipment',
             str_contains($name, 'ship'), str_contains($name, 'dispatch'), str_contains($name, 'sent') => 'shipped',

@@ -224,6 +224,8 @@ class Order
     public const STATUS_WAITING_FOR_PAYMENT = 'waiting_for_payment';
     public const STATUS_READY_FOR_SHIPMENT = 'ready_for_shipment';
     public const STATUS_SHIPPED = 'shipped';
+    /** Payment registered. A status of its own (not a flag) by product decision, Nov 2026. */
+    public const STATUS_PAID = 'paid';
 
     /**
      * All valid order statuses. Used by the Assert\Choice on $status so a client
@@ -243,6 +245,7 @@ class Order
             self::STATUS_WAITING_FOR_PAYMENT,
             self::STATUS_READY_FOR_SHIPMENT,
             self::STATUS_SHIPPED,
+            self::STATUS_PAID,
         ];
     }
 
@@ -419,6 +422,16 @@ class Order
     #[ORM\JoinColumn(nullable: true)]
     #[Groups(['order:read'])]
     private ?User $dispatchedBy = null;
+
+    /**
+     * When the payment was registered (the order entered STATUS_PAID). Kept as a
+     * fact of its own because the status moves on afterwards (paid -> in process
+     * -> shipped ...): the client's open payments are the unpaid, non-cancelled
+     * orders, i.e. those with paidAt NULL. Read-only; set by OrderPriceProcessor.
+     */
+    #[ORM\Column(type: "datetime", nullable: true)]
+    #[Groups(['order:read'])]
+    private ?DateTimeInterface $paidAt = null;
 
     /**
      * @var Collection<int, OrderInfoRequest>
@@ -998,6 +1011,25 @@ class Order
     {
         $this->dispatchedBy = $dispatchedBy;
         return $this;
+    }
+
+    public function getPaidAt(): ?DateTimeInterface
+    {
+        return $this->paidAt;
+    }
+
+    public function setPaidAt(?DateTimeInterface $paidAt): static
+    {
+        $this->paidAt = $paidAt;
+        return $this;
+    }
+
+    /** Open payment = submitted, not paid, not cancelled/reversed. Drafts never count. */
+    public function isOpenPayment(): bool
+    {
+        return !$this->isDraft
+            && $this->paidAt === null
+            && !in_array($this->status, [self::STATUS_DRAFT, self::STATUS_CANCELED, self::STATUS_REVERSAL], true);
     }
 
     // Cancellation getters and setters
