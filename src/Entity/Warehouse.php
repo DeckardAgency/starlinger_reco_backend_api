@@ -83,6 +83,11 @@ class Warehouse
     #[Groups(['warehouse:read', 'warehouse:write'])]
     private ?string $city = null;
 
+    // Required as the DHL Express shipper/pickup address (legacy warehouse had none)
+    #[ORM\Column(length: 20, nullable: true)]
+    #[Groups(['warehouse:read', 'warehouse:write'])]
+    private ?string $postalCode = null;
+
     #[ORM\ManyToOne(targetEntity: Country::class)]
     #[ORM\JoinColumn(nullable: true)]
     #[Groups(['warehouse:read', 'warehouse:write'])]
@@ -278,6 +283,17 @@ class Warehouse
     public function setCity(?string $city): static
     {
         $this->city = $city;
+        return $this;
+    }
+
+    public function getPostalCode(): ?string
+    {
+        return $this->postalCode;
+    }
+
+    public function setPostalCode(?string $postalCode): static
+    {
+        $this->postalCode = $postalCode;
         return $this;
     }
 

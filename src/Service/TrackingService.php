@@ -8,14 +8,14 @@ use App\Enum\TrackingStatus;
 use App\Message\OrderTrackingChangedMessage;
 use App\Repository\OrderRepository;
 use App\Repository\TrackingEventRepository;
-use App\Service\Carrier\DhlClient;
+use App\Service\Carrier\MyDhl\MyDhlClient;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Workflow\WorkflowInterface;
 
 /**
- * Coordinates tracking refresh: queries the carrier client, dedupes events,
+ * Coordinates tracking refresh: queries the carrier (DHL Express via MyDHL), dedupes events,
  * persists new ones, and dispatches messages for status transitions.
  */
 class TrackingService
@@ -24,7 +24,7 @@ class TrackingService
         private readonly EntityManagerInterface $entityManager,
         private readonly TrackingEventRepository $trackingEventRepository,
         private readonly OrderRepository $orderRepository,
-        private readonly DhlClient $dhlClient,
+        private readonly MyDhlClient $dhlClient,
         private readonly MessageBusInterface $messageBus,
         private readonly LoggerInterface $logger,
         private readonly WorkflowInterface $orderStateMachine,
@@ -43,7 +43,7 @@ class TrackingService
         }
 
         $carrier = strtolower((string) $order->getTrackingCarrier());
-        if ($carrier !== 'dhl') {
+        if ($carrier !== 'dhl' || !$this->dhlClient->isConfigured()) {
             // Other carriers can be plugged in via a CarrierClient interface later.
             return 0;
         }

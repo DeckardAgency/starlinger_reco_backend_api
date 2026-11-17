@@ -31,16 +31,39 @@ enum TrackingStatus: string
     }
 
     /**
-     * Map a DHL Track-and-Trace status code to our enum.
-     * DHL codes: pre-transit, transit, delivered, failure, unknown
+     * Map a DHL Express (MyDHL API tracking) checkpoint to our enum.
+     *
+     * DHL identifies checkpoints by a two-letter typeCode; the well-known ones are
+     * mapped explicitly, anything else falls back to keywords in the description
+     * so an unlisted code still lands on a sensible status instead of a crash.
      */
-    public static function fromDhlStatus(string $dhlStatus): self
+    public static function fromDhlExpressEvent(string $typeCode, ?string $description = null): self
     {
-        return match (strtolower(trim($dhlStatus))) {
-            'pre-transit', 'created' => self::CREATED,
-            'transit', 'in-transit', 'in_transit' => self::IN_TRANSIT,
-            'delivered' => self::DELIVERED,
-            'failure', 'exception' => self::EXCEPTION,
+        $mapped = match (strtoupper(trim($typeCode))) {
+            'SM', 'SI' => self::CREATED,                 // shipment information received
+            'PU', 'SA' => self::PICKED_UP,               // picked up / shipment acceptance
+            'WC', 'OD' => self::OUT_FOR_DELIVERY,        // with delivery courier
+            'OK', 'DD' => self::DELIVERED,               // delivered (DD: delivered damaged)
+            'RT', 'RR' => self::RETURNED,                // returned to shipper
+            'ND', 'NH', 'MD', 'RD', 'BA', 'OH', 'HO',
+            'CD', 'CA', 'SS', 'TD', 'UD', 'HP', 'DM' => self::EXCEPTION, // not delivered, hold, delays, clearance delay
+            'PL', 'DF', 'AF', 'AR', 'TR', 'CR', 'CC', 'IC', 'FD' => self::IN_TRANSIT,
+            default => null,
+        };
+        if ($mapped) {
+            return $mapped;
+        }
+
+        $text = strtolower((string) $description);
+
+        return match (true) {
+            str_contains($text, 'delivered') && !str_contains($text, 'not delivered') => self::DELIVERED,
+            str_contains($text, 'with delivery courier'), str_contains($text, 'out for delivery') => self::OUT_FOR_DELIVERY,
+            str_contains($text, 'picked up') => self::PICKED_UP,
+            str_contains($text, 'returned') => self::RETURNED,
+            str_contains($text, 'information received'), str_contains($text, 'label created') => self::CREATED,
+            str_contains($text, 'not delivered'), str_contains($text, 'on hold'), str_contains($text, 'delay'),
+            str_contains($text, 'refused'), str_contains($text, 'bad address'), str_contains($text, 'missed') => self::EXCEPTION,
             default => self::IN_TRANSIT,
         };
     }

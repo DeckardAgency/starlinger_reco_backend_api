@@ -2,8 +2,6 @@ parameters:
     media_directory: '%kernel.project_dir%/public/uploads'
     app.client_url: '%env(CLIENT_APP_URL)%'
     app.invitation_expiration_days: 7
-    app.dhl_api_key: '%env(string:default::DHL_API_KEY)%'
-    app.dhl_api_base_url: '%env(string:default::DHL_API_BASE_URL)%'
 
 services:
     _defaults:
@@ -160,11 +158,22 @@ services:
         arguments:
             $mediaDirectory: '%media_directory%'
 
-    # Carrier integration — DHL Track and Trace API
-    App\Service\Carrier\DhlClient:
+    # Carrier integration — DHL Express MyDHL API (shipments, labels, pickups, rates)
+    App\Service\Carrier\MyDhl\MyDhlClient:
         arguments:
-            $apiKey: '%app.dhl_api_key%'
-            $baseUrl: '%app.dhl_api_base_url%'
+            $apiUrl: '%env(string:default::DHL_EXPRESS_API_URL)%'
+            $username: '%env(string:default::DHL_EXPRESS_USERNAME)%'
+            $password: '%env(string:default::DHL_EXPRESS_PASSWORD)%'
+            $accountNumber: '%env(string:default::DHL_EXPRESS_ACCOUNT_NUMBER)%'
+
+    App\Service\Carrier\MyDhl\DhlShipmentService:
+        arguments:
+            $shipperEori: '%env(string:default::DHL_EXPRESS_SHIPPER_EORI)%'
+            $paperlessTrade: '%env(bool:default::DHL_EXPRESS_PAPERLESS_TRADE)%'
+
+    App\Service\Carrier\MyDhl\DhlLabelStorage:
+        arguments:
+            $storageDirectory: '%kernel.project_dir%/var/storage/dhl-labels'
 
     App\MessageHandler\OrderTrackingChangedMessageHandler:
         arguments:

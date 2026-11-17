@@ -83,6 +83,16 @@ class DeliveryType
     #[Groups(['delivery_type:read', 'delivery_type:write', 'order:read'])]
     private ?string $carrierCode = null;
 
+    /**
+     * DHL Express (MyDHL) product to book for this delivery type, e.g. "U" Express
+     * Worldwide. MyDHL uses different codes for dutiable shipments (U→P, T→Y, K→E,
+     * W→H); the booking service maps them. Null = Express Worldwide.
+     */
+    #[ORM\Column(name: 'dhl_product_code', length: 5, nullable: true)]
+    #[Assert\Regex(pattern: '/^[A-Z0-9]$/', message: 'DHL product code is a single letter or digit, e.g. U.')]
+    #[Groups(['delivery_type:read', 'delivery_type:write'])]
+    private ?string $dhlProductCode = null;
+
     #[ORM\Column(length: 50, nullable: true)]
     #[Groups(['delivery_type:read', 'delivery_type:write'])]
     private ?string $remoteId = null;
@@ -207,6 +217,17 @@ class DeliveryType
     public function setCarrierCode(?string $carrierCode): static
     {
         $this->carrierCode = $carrierCode;
+        return $this;
+    }
+
+    public function getDhlProductCode(): ?string
+    {
+        return $this->dhlProductCode;
+    }
+
+    public function setDhlProductCode(?string $dhlProductCode): static
+    {
+        $this->dhlProductCode = $dhlProductCode !== null && $dhlProductCode !== '' ? strtoupper($dhlProductCode) : null;
         return $this;
     }
 

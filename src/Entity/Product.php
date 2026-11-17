@@ -24,6 +24,7 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Serializer\Annotation\SerializedName;
+use Symfony\Component\Validator\Constraints as Assert;
 use Gedmo\Mapping\Annotation as Gedmo;
 use ApiPlatform\OpenApi\Model;
 
@@ -152,6 +153,18 @@ class Product
     #[ORM\Column(length: 50, nullable: true)]
     #[Groups(['product:read', 'product:write', 'order_item:read', 'order:read'])]
     private ?string $weight = null;
+
+    // Customs data for DHL Express exports outside the EU (commercial invoice line)
+    #[ORM\Column(length: 20, nullable: true)]
+    #[Assert\Regex(pattern: '/^[0-9]{6,10}$/', message: 'HS code is 6-10 digits, without dots or spaces.')]
+    #[Groups(['product:read', 'product:write'])]
+    private ?string $hsCode = null;
+
+    /** ISO 3166-1 alpha-2 country of manufacture, e.g. AT. */
+    #[ORM\Column(length: 2, nullable: true)]
+    #[Assert\Regex(pattern: '/^[A-Z]{2}$/', message: 'Country of origin is a 2-letter ISO code, e.g. AT.')]
+    #[Groups(['product:read', 'product:write'])]
+    private ?string $countryOfOrigin = null;
 
     #[ORM\Column(type: "text", nullable: true)]
     #[Groups(['product:read', 'product:write'])]
@@ -357,6 +370,44 @@ class Product
     public function setWeight(?string $weight): static
     {
         $this->weight = $weight;
+        return $this;
+    }
+
+    /**
+     * Weight in kg as a number. The column is free text from the legacy import
+     * (e.g. "0.5", "1,2"); unit-less values are treated as kg.
+     */
+    public function getWeightKg(): ?float
+    {
+        if ($this->weight === null || trim($this->weight) === '') {
+            return null;
+        }
+        $normalized = str_replace(',', '.', preg_replace('/[^0-9.,]/', '', $this->weight));
+
+        return is_numeric($normalized) && (float) $normalized > 0 ? (float) $normalized : null;
+    }
+
+    public function getHsCode(): ?string
+    {
+        return $this->hsCode;
+    }
+
+    public function setHsCode(?string $hsCode): static
+    {
+        $hsCode = $hsCode !== null ? preg_replace('/[^0-9]/', '', $hsCode) : null;
+        $this->hsCode = $hsCode !== '' ? $hsCode : null;
+        return $this;
+    }
+
+    public function getCountryOfOrigin(): ?string
+    {
+        return $this->countryOfOrigin;
+    }
+
+    public function setCountryOfOrigin(?string $countryOfOrigin): static
+    {
+        $countryOfOrigin = $countryOfOrigin !== null ? strtoupper(trim($countryOfOrigin)) : null;
+        $this->countryOfOrigin = $countryOfOrigin !== '' ? $countryOfOrigin : null;
         return $this;
     }
 

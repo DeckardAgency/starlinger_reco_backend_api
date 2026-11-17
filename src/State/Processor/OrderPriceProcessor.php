@@ -128,6 +128,16 @@ final class OrderPriceProcessor implements ProcessorInterface
             }
         }
 
+        // Tracking fields are admin/carrier data (they drive DHL polling and the customer's
+        // tracking link) — a customer write must not change them. They share the
+        // order:write group with customer-editable fields, so restore them here.
+        if (!$this->security->isGranted('ROLE_ADMIN')) {
+            $stored = $isNewOrder ? [] : $this->storedTrackingFields($data, $originalOrder ?? []);
+            $data->setTrackingNumber($stored['trackingNumber'] ?? null);
+            $data->setTrackingCarrier($stored['trackingCarrier'] ?? null);
+            $data->setTrackingUrl($stored['trackingUrl'] ?? null);
+        }
+
         // Reject non-draft orders with no items
         if (!$data->isDraft() && $data->getItems()->isEmpty()) {
             throw new BadRequestHttpException('Cannot create an order with no items.');
@@ -148,8 +158,9 @@ final class OrderPriceProcessor implements ProcessorInterface
         // save, not just the dispatch transition — so tracking still works when the
         // number is entered after the order was already marked shipped.
         if (!empty($data->getTrackingNumber())) {
+            // DeliveryType stores carriers uppercase ("DHL"); order tracking uses lowercase ("dhl")
             if (empty($data->getTrackingCarrier()) && $data->getDeliveryType()?->getCarrierCode()) {
-                $data->setTrackingCarrier($data->getDeliveryType()->getCarrierCode());
+                $data->setTrackingCarrier(strtolower($data->getDeliveryType()->getCarrierCode()));
             }
             if (empty($data->getTrackingUrl())) {
                 $generatedUrl = $data->generateTrackingUrl();
@@ -701,6 +712,30 @@ final class OrderPriceProcessor implements ProcessorInterface
     /**
      * Determine which workflow transition to apply based on status change
      */
+    /**
+     * Tracking fields as currently stored: from the unit of work's original data
+     * when Doctrine has it, otherwise straight from the database.
+     *
+     * @return array{trackingNumber?: ?string, trackingCarrier?: ?string, trackingUrl?: ?string}
+     */
+    private function storedTrackingFields(Order $order, array $originalOrder): array
+    {
+        if (array_key_exists('trackingNumber', $originalOrder)) {
+            return $originalOrder;
+        }
+
+        $row = $this->entityManager->getConnection()->fetchAssociative(
+            'SELECT tracking_number, tracking_carrier, tracking_url FROM `order` WHERE id = ?',
+            [$order->getId()]
+        );
+
+        return $row ? [
+            'trackingNumber' => $row['tracking_number'],
+            'trackingCarrier' => $row['tracking_carrier'],
+            'trackingUrl' => $row['tracking_url'],
+        ] : [];
+    }
+
     private function determineOrderTransition(string $oldStatus, string $newStatus): ?string
     {
         // Map status changes to workflow transitions
@@ -763,7 +798,7 @@ final class OrderPriceProcessor implements ProcessorInterface
 
         // Auto-fill carrier from delivery type if not explicitly set
         if (empty($order->getTrackingCarrier()) && $order->getDeliveryType()?->getCarrierCode()) {
-            $order->setTrackingCarrier($order->getDeliveryType()->getCarrierCode());
+            $order->setTrackingCarrier(strtolower($order->getDeliveryType()->getCarrierCode()));
         }
 
         if (empty($order->getTrackingCarrier())) {
