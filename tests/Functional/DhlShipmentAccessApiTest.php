@@ -79,7 +79,7 @@ final class DhlShipmentAccessApiTest extends WebTestCase
             if (isset($this->em) && $this->em->isOpen()) {
                 $conn = $this->em->getConnection();
                 // dhl_shipment cascades from order
-                $conn->executeStatement("DELETE FROM `order` WHERE order_number = :n", ['n' => 'DT-' . $this->suffix]);
+                $conn->executeStatement("DELETE o FROM `order` o JOIN user u ON o.user_id = u.id WHERE u.email LIKE :s", ['s' => '%-' . $this->suffix]);
                 $conn->executeStatement('DELETE FROM user WHERE email LIKE :s', ['s' => '%-' . $this->suffix]);
                 $conn->executeStatement('DELETE FROM client WHERE code = :c', ['c' => 'DT-' . $this->suffix]);
             }

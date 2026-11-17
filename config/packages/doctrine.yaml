@@ -6,6 +6,8 @@ doctrine:
                 url: '%env(resolve:DATABASE_URL)%'
                 profiling_collect_backtrace: '%kernel.debug%'
                 use_savepoints: true
+                # order_number_sequence is a plain AUTO_INCREMENT counter (OrderNumberSequence), not an entity
+                schema_filter: '~^(?!order_number_sequence$)~'
             legacy:
                 url: '%env(resolve:LEGACY_DATABASE_URL)%'
     orm:

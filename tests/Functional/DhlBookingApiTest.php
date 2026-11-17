@@ -184,17 +184,22 @@ final class DhlBookingApiTest extends WebTestCase
         self::assertStringContainsString('country of origin', implode(' ', $body['issues']));
     }
 
-    public function testBookEuShipmentMarksOrderShipped(): void
+    public function testBookEuShipmentMovesOrderToReadyForShipment(): void
     {
-        $order = $this->order($this->de);
+        $order = $this->order($this->de, Order::STATUS_IN_PROCESS);
         $awb = $this->queueShipment(withInvoice: false);
+        $input = $this->bookingInput($order);
+        $input['reference'] = 'EA2068302 ZGL EA4109536';
+        $input['plannedShippingTime'] = '14:30';
 
-        $body = $this->call('POST', "/api/v1/orders/{$order->getId()}/dhl-shipments", $this->bookingInput($order));
+        $body = $this->call('POST', "/api/v1/orders/{$order->getId()}/dhl-shipments", $input);
 
         self::assertSame(201, $this->httpStatus(), json_encode($body));
         self::assertSame($awb, $body['shipment']['awb']);
         self::assertSame(['label'], $body['shipment']['documentTypes']);
-        self::assertSame('shipped', $body['order']['status']);
+        self::assertSame('EA2068302 ZGL EA4109536', $body['shipment']['reference']);
+        self::assertStringContainsString('T14:30:00', $body['shipment']['plannedShippingAt']);
+        self::assertSame('ready_for_shipment', $body['order']['status'], 'Label created = ready for the warehouse; shipped follows the pickup scan');
         self::assertSame($awb, $body['order']['trackingNumber']);
         self::assertSame('dhl', $body['order']['trackingCarrier']);
         self::assertStringContainsString($awb, (string) $body['order']['trackingUrl']);
@@ -204,16 +209,19 @@ final class DhlBookingApiTest extends WebTestCase
         self::assertFalse($sent['content']['isCustomsDeclarable']);
         self::assertArrayNotHasKey('exportDeclaration', $sent['content']);
         self::assertSame('ECOM26_A4_001', $sent['outputImageProperties']['imageOptions'][0]['templateName']);
-        self::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T13:00:00 GMT\+0[12]:00$/', $sent['plannedShippingDateAndTime']);
+        self::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T14:30:00 GMT\+0[12]:00$/', $sent['plannedShippingDateAndTime']);
+        self::assertSame([
+            ['value' => 'EA2068302 ZGL EA4109536', 'typeCode' => 'CU'],
+            ['value' => $order->getOrderNumber(), 'typeCode' => 'CU'],
+        ], $sent['customerReferences'], 'The warehouse reference comes first on the label');
         self::assertSame('170600864', $sent['accounts'][0]['number']);
         self::assertSame('DE123456789', $sent['customerDetails']['receiverDetails']['registrationNumbers'][0]['number']);
         self::assertSame(['weight' => 1.2, 'dimensions' => ['length' => 30.0, 'width' => 20.0, 'height' => 15.0]], $sent['content']['packages'][0]);
 
         $this->em->clear();
         $reloaded = $this->em->getRepository(Order::class)->find($order->getId());
-        self::assertSame('shipped', $reloaded->getStatus());
-        self::assertNotNull($reloaded->getDispatchedAt());
-        self::assertSame($this->admin->getId(), $reloaded->getDispatchedBy()?->getId());
+        self::assertSame('ready_for_shipment', $reloaded->getStatus());
+        self::assertNull($reloaded->getDispatchedAt(), 'Not dispatched until DHL picks the parcel up');
 
         // Label is stored and downloadable
         $this->call('GET', "/api/v1/dhl_shipments/{$body['shipment']['id']}/documents/label");
@@ -280,6 +288,19 @@ final class DhlBookingApiTest extends WebTestCase
         $reloaded = $this->em->getRepository(Order::class)->find($order->getId());
         self::assertSame('ready_for_shipment', $reloaded->getStatus());
         self::assertNull($reloaded->getTrackingNumber());
+
+        // The refused attempt is kept with DHL's reason, and does not block a new request
+        $list = $this->call('GET', "/api/v1/dhl_shipments?order.id={$order->getId()}");
+        self::assertCount(1, $list['member']);
+        self::assertSame('failed', $list['member'][0]['status']);
+        self::assertNull($list['member'][0]['awb']);
+        self::assertStringContainsString('420505', $list['member'][0]['errorMessage']);
+        self::assertSame($order->getOrderNumber(), $list['member'][0]['orderNumber']);
+        self::assertSame('Receiver GmbH ' . $this->suffix, $list['member'][0]['customerName']);
+
+        $this->queueShipment(withInvoice: false);
+        $this->call('POST', "/api/v1/orders/{$order->getId()}/dhl-shipments", $this->bookingInput($order));
+        self::assertSame(201, $this->httpStatus());
     }
 
     public function testFailedPickupKeepsTheShipmentAndCanBeRetried(): void
@@ -296,7 +317,7 @@ final class DhlBookingApiTest extends WebTestCase
         $body = $this->call('POST', "/api/v1/orders/{$order->getId()}/dhl-shipments", $input);
 
         self::assertSame(201, $this->httpStatus(), json_encode($body));
-        self::assertSame('shipped', $body['order']['status']);
+        self::assertSame('ready_for_shipment', $body['order']['status']);
         self::assertStringContainsString('5002', (string) $body['shipment']['pickupError']);
         self::assertNull($body['shipment']['pickupConfirmationNumber']);
         $pickupSent = $this->lastRequest('POST pickups')['body'];
@@ -354,12 +375,15 @@ final class DhlBookingApiTest extends WebTestCase
         self::assertSame('created', $events->first()->getStatus());
         self::assertSame('dhl_api', $events->first()->getSource());
 
+        // Scans must be newer than the "label created" event written at booking (now)
+        $pickupDay = (new \DateTimeImmutable('+1 day'))->format('Y-m-d');
+        $deliveryDay = (new \DateTimeImmutable('+2 days'))->format('Y-m-d');
         $this->queue('GET tracking', ['shipments' => [[
             'shipmentTrackingNumber' => $awb, 'status' => 'Success',
             'events' => [
-                ['date' => '2026-10-19', 'time' => '15:18:00', 'GMTOffset' => '+02:00', 'typeCode' => 'PU', 'description' => 'Shipment picked up', 'serviceArea' => [['code' => 'VIE', 'description' => 'Vienna - Austria']]],
-                ['date' => '2026-10-20', 'time' => '08:02:00', 'GMTOffset' => '+01:00', 'typeCode' => 'WC', 'description' => 'With delivery courier', 'serviceArea' => [['code' => 'BER', 'description' => 'Berlin - Germany']]],
-                ['date' => '2026-10-20', 'time' => '09:41:00', 'GMTOffset' => '+01:00', 'typeCode' => 'OK', 'description' => 'Delivered', 'serviceArea' => [['code' => 'BER', 'description' => 'Berlin - Germany']]],
+                ['date' => $pickupDay, 'time' => '15:18:00', 'GMTOffset' => '+02:00', 'typeCode' => 'PU', 'description' => 'Shipment picked up', 'serviceArea' => [['code' => 'VIE', 'description' => 'Vienna - Austria']]],
+                ['date' => $deliveryDay, 'time' => '08:02:00', 'GMTOffset' => '+01:00', 'typeCode' => 'WC', 'description' => 'With delivery courier', 'serviceArea' => [['code' => 'BER', 'description' => 'Berlin - Germany']]],
+                ['date' => $deliveryDay, 'time' => '09:41:00', 'GMTOffset' => '+01:00', 'typeCode' => 'OK', 'description' => 'Delivered', 'serviceArea' => [['code' => 'BER', 'description' => 'Berlin - Germany']]],
             ],
         ]]]);
 
@@ -368,6 +392,8 @@ final class DhlBookingApiTest extends WebTestCase
         self::assertSame(200, $this->httpStatus(), json_encode($body));
         self::assertSame(3, $body['created']);
         self::assertSame('delivered', $body['orderStatus']);
+        $this->em->clear();
+        self::assertNotNull($this->em->getRepository(Order::class)->find($order->getId())->getDispatchedAt(), 'The pickup scan stamps the dispatch date');
         self::assertStringContainsString('shipmentTrackingNumber=' . $awb, $this->lastRequest('GET tracking')['url']);
         $statuses = array_map(static fn (array $e) => $e['status'], $body['events']);
         self::assertSame(['delivered', 'out_for_delivery', 'picked_up', 'created'], $statuses, 'newest first');
@@ -379,17 +405,19 @@ final class DhlBookingApiTest extends WebTestCase
 
     public function testGuards(): void
     {
-        $order = $this->order($this->de, Order::STATUS_IN_PROCESS);
-        $body = $this->call('POST', "/api/v1/orders/{$order->getId()}/dhl-shipments", $this->bookingInput($order));
-        self::assertSame(409, $this->httpStatus());
-        self::assertStringContainsString('ready for shipment', $body['message']);
+        foreach ([Order::STATUS_NEW, Order::STATUS_WAITING_FOR_PAYMENT] as $tooEarly) {
+            $order = $this->order($this->de, $tooEarly);
+            $body = $this->call('POST', "/api/v1/orders/{$order->getId()}/dhl-shipments", $this->bookingInput($order));
+            self::assertSame(409, $this->httpStatus(), $tooEarly);
+            self::assertStringContainsString('in process, paid or ready for shipment', $body['message']);
+        }
 
         $order = $this->order($this->de);
         $this->queueShipment(withInvoice: false);
         $this->call('POST', "/api/v1/orders/{$order->getId()}/dhl-shipments", $this->bookingInput($order));
         self::assertSame(201, $this->httpStatus());
 
-        // Order is shipped now; a second booking is refused before reaching DHL
+        // A booked shipment is active; a second booking is refused before reaching DHL
         $requestsBefore = count($this->dhlRequests);
         $this->call('POST', "/api/v1/orders/{$order->getId()}/dhl-shipments", $this->bookingInput($order));
         self::assertSame(409, $this->httpStatus());

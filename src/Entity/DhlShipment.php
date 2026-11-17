@@ -37,12 +37,14 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
     normalizationContext: ['groups' => ['dhl_shipment:read']],
     order: ['createdAt' => 'DESC']
 )]
-#[ApiFilter(SearchFilter::class, properties: ['order' => 'exact', 'order.id' => 'exact', 'awb' => 'exact', 'status' => 'exact'])]
+#[ApiFilter(SearchFilter::class, properties: ['order' => 'exact', 'order.id' => 'exact', 'order.orderNumber' => 'partial', 'awb' => 'exact', 'status' => 'exact'])]
 #[ApiFilter(OrderFilter::class, properties: ['createdAt'])]
 class DhlShipment
 {
     public const STATUS_BOOKED = 'booked';
     public const STATUS_CANCELLED = 'cancelled';
+    /** DHL refused the booking; kept so the attempt and its reason stay visible. */
+    public const STATUS_FAILED = 'failed';
 
     public const LABEL_FORMAT_A4 = 'a4';
     public const LABEL_FORMAT_THERMAL = 'thermal';
@@ -62,8 +64,8 @@ class DhlShipment
     #[Groups(['dhl_shipment:read'])]
     private string $status = self::STATUS_BOOKED;
 
-    /** DHL Express waybill number — also written to Order.trackingNumber. */
-    #[ORM\Column(length: 20)]
+    /** DHL Express waybill number — also written to Order.trackingNumber. Null when the booking failed. */
+    #[ORM\Column(length: 20, nullable: true)]
     #[Groups(['dhl_shipment:read'])]
     private ?string $awb = null;
 
@@ -157,6 +159,16 @@ class DhlShipment
     #[ORM\Column(type: 'json')]
     #[Groups(['dhl_shipment:read'])]
     private array $warnings = [];
+
+    /** Free-text reference the warehouse puts on the label, e.g. the ERP delivery/shipment numbers. */
+    #[ORM\Column(length: 35, nullable: true)]
+    #[Groups(['dhl_shipment:read'])]
+    private ?string $reference = null;
+
+    /** Why DHL refused the booking (status "failed"); null for booked and cancelled shipments. */
+    #[ORM\Column(type: 'text', nullable: true)]
+    #[Groups(['dhl_shipment:read'])]
+    private ?string $errorMessage = null;
 
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
@@ -466,5 +478,48 @@ class DhlShipment
     public function getUpdatedAt(): ?\DateTimeInterface
     {
         return $this->updatedAt;
+    }
+    public function getReference(): ?string
+    {
+        return $this->reference;
+    }
+
+    public function setReference(?string $reference): static
+    {
+        $this->reference = $reference;
+        return $this;
+    }
+
+    public function getErrorMessage(): ?string
+    {
+        return $this->errorMessage;
+    }
+
+    public function setErrorMessage(?string $errorMessage): static
+    {
+        $this->errorMessage = $errorMessage;
+        return $this;
+    }
+
+    // Flat order fields for the shipments list — keeps order:read out of this resource.
+
+    #[Groups(['dhl_shipment:read'])]
+    public function getOrderNumber(): ?string
+    {
+        return $this->order?->getOrderNumber();
+    }
+
+    #[Groups(['dhl_shipment:read'])]
+    public function getOrderStatus(): ?string
+    {
+        return $this->order?->getStatus();
+    }
+
+    /** The company the order is for (the agent's customer on agent orders). */
+    #[Groups(['dhl_shipment:read'])]
+    public function getCustomerName(): ?string
+    {
+        return $this->order?->getOnBehalfOfClient()?->getName()
+            ?? $this->order?->getUser()?->getClient()?->getName();
     }
 }

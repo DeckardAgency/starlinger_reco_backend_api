@@ -45,6 +45,17 @@ class DhlShipmentService
     private const DEFAULT_PICKUP_READY = '13:00';
     private const DEFAULT_PICKUP_CLOSE = '16:00';
     private const DEFAULT_PICKUP_LOCATION = 'Reception';
+    /** Time of day the parcel is ready at the warehouse (origin local time). */
+    private const DEFAULT_SHIPPING_TIME = '13:00';
+    /** MyDHL limit for one customer reference value. */
+    private const REFERENCE_MAX = 35;
+
+    /**
+     * Booking happens once the ERP has scheduled the order (in process), before the
+     * warehouse picks — the label is what the packer works with. Prepayment orders
+     * wait until they are paid; "shipped" follows from DHL's pickup scan.
+     */
+    private const BOOKABLE_STATUSES = [Order::STATUS_IN_PROCESS, Order::STATUS_PAID, Order::STATUS_READY_FOR_SHIPMENT];
 
     private const LABEL_TEMPLATES = [
         DhlShipment::LABEL_FORMAT_A4 => 'ECOM26_A4_001',
@@ -122,6 +133,8 @@ class DhlShipmentService
             'isCustomsDeclarable' => $dutiable,
             'productCode' => $productCode,
             'plannedShippingDate' => $shippingDate->format('Y-m-d'),
+            'plannedShippingTime' => self::DEFAULT_SHIPPING_TIME,
+            'reference' => '',
             'labelFormat' => DhlShipment::LABEL_FORMAT_A4,
             'packages' => [['weight' => $totalWeight > 0 ? $totalWeight : null, 'length' => null, 'width' => null, 'height' => null]],
             'description' => self::DEFAULT_DESCRIPTION,
@@ -149,7 +162,9 @@ class DhlShipmentService
     // ------------------------------------------------------------------
 
     /**
-     * Books the shipment with DHL and marks the order shipped.
+     * Books the shipment with DHL and moves the order to "ready for shipment";
+     * "shipped" follows from DHL's pickup scan (TrackingService) or the admin.
+     * A booking DHL refuses is kept as a failed shipment (recordFailedBooking).
      *
      * @param array $input the (possibly admin-edited) prefill structure
      * @throws DhlBookingException invalid input / wrong order state
@@ -172,7 +187,12 @@ class DhlShipmentService
                 throw DhlBookingException::invalid($errors);
             }
 
-            $result = $this->client->createShipment($this->buildShipmentPayload($order, $data));
+            try {
+                $result = $this->client->createShipment($this->buildShipmentPayload($order, $data));
+            } catch (MyDhlException $e) {
+                $this->recordFailedBooking($order, $data, $input, $user, $e);
+                throw $e;
+            }
 
             // DHL has booked it — from here on, never lose the AWB, even if our side fails.
             $this->logger->info('DHL shipment booked', ['order_id' => $order->getId(), 'awb' => $result->awb]);
@@ -182,7 +202,8 @@ class DhlShipmentService
                 ->setAwb($result->awb)
                 ->setProductCode($data['productCode'])
                 ->setProductName($this->productNameFromRates($input, $data['productCode']))
-                ->setPlannedShippingAt($this->plannedAt($data['plannedShippingDate'], $data['pickup']['readyTime']))
+                ->setPlannedShippingAt($this->plannedAt($data['plannedShippingDate'], $data['plannedShippingTime']))
+                ->setReference($data['reference'] !== '' ? $data['reference'] : null)
                 ->setIsCustomsDeclarable($data['isCustomsDeclarable'])
                 ->setPackages($this->packagesWithTracking($data['packages'], $result->pieceTrackingNumbers))
                 ->setTotalWeight(number_format(array_sum(array_column($data['packages'], 'weight')), 3, '.', ''))
@@ -200,7 +221,7 @@ class DhlShipmentService
             }
 
             try {
-                $this->entityManager->wrapInTransaction(function () use ($order, $shipment, $data, $user) {
+                $this->entityManager->wrapInTransaction(function () use ($order, $shipment, $data) {
                     $this->entityManager->persist($shipment);
                     if ($data['isCustomsDeclarable']) {
                         $this->rememberCustomsData($order, $data['lineItems']);
@@ -209,8 +230,6 @@ class DhlShipmentService
                     $order->setTrackingNumber($shipment->getAwb());
                     $order->setTrackingCarrier('dhl');
                     $order->setTrackingUrl($order->generateTrackingUrl());
-                    $order->setDispatchedAt(new \DateTime());
-                    $order->setDispatchedBy($user);
 
                     // First timeline entry; DHL's own checkpoints follow once the parcel is scanned.
                     $order->addTrackingEvent((new TrackingEvent())
@@ -220,10 +239,13 @@ class DhlShipmentService
                         ->setOccurredAt(new \DateTime())
                         ->setSource(TrackingEvent::SOURCE_DHL_API));
 
-                    // Applying "ship" dispatches OrderStatusChangedMessage (dispatched emails).
-                    // The doctrine messenger transport shares this connection, so the message
-                    // only becomes visible to the worker on commit — with the tracking number in place.
-                    $this->orderStateMachine->apply($order, 'ship');
+                    // Label created = ready for the warehouse to pack. "shipped" comes later, from
+                    // DHL's pickup scan or the admin. The transition dispatches the status email;
+                    // the doctrine messenger transport shares this connection, so the message only
+                    // becomes visible to the worker on commit — with the tracking number in place.
+                    if ($this->orderStateMachine->can($order, 'ready_to_ship')) {
+                        $this->orderStateMachine->apply($order, 'ready_to_ship');
+                    }
 
                     $this->entityManager->flush();
                 });
@@ -335,7 +357,8 @@ class DhlShipmentService
     /**
      * MyDHL has no "void shipment" call: an Express AWB is only billed once DHL
      * scans the parcel. Cancelling here cancels the pickup, marks the shipment
-     * cancelled and returns the order to "ready for shipment" so it can be re-booked.
+     * cancelled. The order keeps "ready for shipment" (an order already marked shipped by
+     * hand goes back to it), so a new shipment can be requested.
      */
     public function cancel(DhlShipment $shipment, User $user): DhlShipment
     {
@@ -396,9 +419,9 @@ class DhlShipmentService
 
     private function assertBookable(Order $order): void
     {
-        if ($order->getStatus() !== Order::STATUS_READY_FOR_SHIPMENT) {
+        if (!in_array($order->getStatus(), self::BOOKABLE_STATUSES, true)) {
             throw DhlBookingException::conflict(sprintf(
-                'Only orders that are ready for shipment can be booked with DHL (this one is "%s").',
+                'Only orders in process, paid or ready for shipment can be booked with DHL (this one is "%s").',
                 $order->getStatus()
             ));
         }
@@ -408,6 +431,49 @@ class DhlShipmentService
         if (!$this->client->isConfigured()) {
             throw DhlBookingException::conflict('DHL Express is not configured on this server.');
         }
+    }
+
+    /** References DHL prints on the label: the warehouse's own first, then our order number. */
+    private function customerReferences(Order $order, array $data): array
+    {
+        $references = [];
+        if ($data['reference'] !== '') {
+            $references[] = ['value' => $data['reference'], 'typeCode' => 'CU'];
+        }
+        $references[] = ['value' => mb_substr((string) $order->getOrderNumber(), 0, self::REFERENCE_MAX), 'typeCode' => 'CU'];
+
+        return $references;
+    }
+
+    /**
+     * DHL refused the booking: keep what was attempted and why, so the shipments
+     * list shows it and the admin can correct the data and request again.
+     */
+    private function recordFailedBooking(Order $order, array $data, array $input, User $user, MyDhlException $e): void
+    {
+        $message = $e->getMessage();
+        if ($e->getDetails() !== []) {
+            $message .= ' — ' . implode(' ', array_map('strval', $e->getDetails()));
+        }
+
+        $failed = (new DhlShipment())
+            ->setOrder($order)
+            ->setStatus(DhlShipment::STATUS_FAILED)
+            ->setErrorMessage($message)
+            ->setReference($data['reference'] !== '' ? $data['reference'] : null)
+            ->setProductCode($data['productCode'])
+            ->setProductName($this->productNameFromRates($input, $data['productCode']))
+            ->setPlannedShippingAt($this->plannedAt($data['plannedShippingDate'], $data['plannedShippingTime']))
+            ->setIsCustomsDeclarable($data['isCustomsDeclarable'])
+            ->setPackages($data['packages'])
+            ->setTotalWeight(number_format(array_sum(array_column($data['packages'], 'weight')), 3, '.', ''))
+            ->setShipper($data['shipper'])
+            ->setReceiver($data['receiver'])
+            ->setLabelFormat($data['labelFormat'])
+            ->setCreatedBy($user);
+
+        $this->entityManager->persist($failed);
+        $this->entityManager->flush();
     }
 
     private function resolveWarehouse(Order $order): ?Warehouse
@@ -569,6 +635,8 @@ class DhlShipmentService
             'isCustomsDeclarable' => (bool) ($input['isCustomsDeclarable'] ?? false),
             'productCode' => strtoupper(trim((string) ($input['productCode'] ?? ''))),
             'plannedShippingDate' => $this->date($input['plannedShippingDate'] ?? null),
+            'plannedShippingTime' => $this->time($input['plannedShippingTime'] ?? null) ?? self::DEFAULT_SHIPPING_TIME,
+            'reference' => mb_substr(trim((string) ($input['reference'] ?? '')), 0, self::REFERENCE_MAX),
             'labelFormat' => (string) ($input['labelFormat'] ?? DhlShipment::LABEL_FORMAT_A4),
             'packages' => $packages,
             'description' => mb_substr(trim((string) ($input['description'] ?? '')), 0, 70) ?: self::DEFAULT_DESCRIPTION,
@@ -684,7 +752,7 @@ class DhlShipmentService
     private function buildShipmentPayload(Order $order, array $data): array
     {
         $dutiable = $data['isCustomsDeclarable'];
-        $plannedAt = $this->plannedAt($data['plannedShippingDate'], $data['pickup']['readyTime']);
+        $plannedAt = $this->plannedAt($data['plannedShippingDate'], $data['plannedShippingTime']);
 
         $imageOptions = [
             ['typeCode' => 'label', 'templateName' => self::LABEL_TEMPLATES[$data['labelFormat']]],
@@ -726,7 +794,7 @@ class DhlShipmentService
                 'splitTransportAndWaybillDocLabels' => false,
                 'allDocumentsInOneImage' => false,
             ],
-            'customerReferences' => [['value' => mb_substr((string) $order->getOrderNumber(), 0, 35), 'typeCode' => 'CU']],
+            'customerReferences' => $this->customerReferences($order, $data),
             'customerDetails' => ['shipperDetails' => $shipper, 'receiverDetails' => $receiver],
             'content' => [
                 'packages' => array_map(fn (array $p) => $this->packagePayload($p), $data['packages']),

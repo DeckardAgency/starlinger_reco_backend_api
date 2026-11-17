@@ -43,6 +43,12 @@ class OrderWorkflowSubscriber implements EventSubscriberInterface
         }
 
         $transition = $event->getTransition();
+
+        // "shipped" = the parcel left the building. Stamp it whichever path applied the
+        // transition: an admin status change, or DHL's pickup scan via TrackingService.
+        if ($transition->getName() === 'ship' && $order->getDispatchedAt() === null) {
+            $order->setDispatchedAt(new \DateTime());
+        }
         $marking = $event->getMarking();
         $places = $marking->getPlaces();
         $newStatus = array_key_first($places); // Get current status after transition
