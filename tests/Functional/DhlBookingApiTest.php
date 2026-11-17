@@ -52,6 +52,7 @@ final class DhlBookingApiTest extends WebTestCase
     private Client $company;
     private Product $product;
     private DeliveryType $deliveryType;
+    private Country $at;
     private Country $de;
     private Country $ch;
 
@@ -72,7 +73,7 @@ final class DhlBookingApiTest extends WebTestCase
             '170600864',
         ));
 
-        $at = $this->country('AT', 'Austria', true);
+        $at = $this->at = $this->country('AT', 'Austria', true);
         $this->de = $this->country('DE', 'Germany', true);
         $this->ch = $this->country('CH', 'Switzerland', false);
 
@@ -167,6 +168,41 @@ final class DhlBookingApiTest extends WebTestCase
         self::assertSame(47.08, $body['rates'][0]['price']);
         self::assertSame([], $body['issues']);
         self::assertStringContainsString('destinationPostalCode=10115', $this->dhlRequests[0]['url']);
+    }
+
+    public function testDomesticOrdersUseTheDomesticExpressProduct(): void
+    {
+        $order = $this->order($this->at);
+        // What the account really offers for AT → AT (app:dhl:check, Nov 2026)
+        $this->queue('GET rates', ['products' => [
+            ['productCode' => '1', 'productName' => 'EXPRESS DOMESTIC 12:00', 'isCustomerAgreement' => false, 'totalPrice' => [['currencyType' => 'BILLC', 'priceCurrency' => 'EUR', 'price' => 27.82]]],
+            ['productCode' => 'N', 'productName' => 'EXPRESS DOMESTIC', 'isCustomerAgreement' => false, 'totalPrice' => [['currencyType' => 'BILLC', 'priceCurrency' => 'EUR', 'price' => 19.42]]],
+        ]]);
+
+        $body = $this->call('GET', "/api/v1/orders/{$order->getId()}/dhl-shipment/prefill");
+
+        self::assertSame(200, $this->httpStatus(), json_encode($body));
+        self::assertSame('N', $body['productCode'], '"U" (Express Worldwide) does not exist for domestic lanes');
+        self::assertFalse($body['isCustomsDeclarable']);
+
+        $this->queueShipment(withInvoice: false);
+        $this->call('POST', "/api/v1/orders/{$order->getId()}/dhl-shipments", array_replace($body, ['packages' => [['weight' => 1, 'length' => 10, 'width' => 10, 'height' => 10]]]));
+        self::assertSame(201, $this->httpStatus());
+        self::assertSame('N', $this->lastRequest('POST shipments')['body']['productCode']);
+    }
+
+    public function testPrefillFallsBackToAProductDhlActuallyQuotes(): void
+    {
+        $order = $this->order($this->de);
+        // Lane where the configured product is not offered: only Economy Select and an agreement-only product
+        $this->queue('GET rates', ['products' => [
+            ['productCode' => 'C', 'productName' => 'MEDICAL EXPRESS', 'isCustomerAgreement' => true, 'totalPrice' => [['currencyType' => 'BILLC', 'priceCurrency' => 'EUR', 'price' => 400.0]]],
+            ['productCode' => 'W', 'productName' => 'ECONOMY SELECT', 'isCustomerAgreement' => false, 'totalPrice' => [['currencyType' => 'BILLC', 'priceCurrency' => 'EUR', 'price' => 19.73]]],
+        ]]);
+
+        $body = $this->call('GET', "/api/v1/orders/{$order->getId()}/dhl-shipment/prefill");
+
+        self::assertSame('W', $body['productCode'], 'Cheapest quoted product that needs no agreement');
     }
 
     public function testPrefillForNonEuOrderFlagsMissingCustomsData(): void

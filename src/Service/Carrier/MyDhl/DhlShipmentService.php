@@ -38,6 +38,9 @@ class DhlShipmentService
 
     /** EU product code → its dutiable (customs-declarable) counterpart. */
     private const DUTIABLE_PRODUCT = ['U' => 'P', 'T' => 'Y', 'K' => 'E', 'W' => 'H', '7' => '8', 'C' => 'Q'];
+    /** EU product code → its domestic counterpart (same origin and destination country). */
+    private const DOMESTIC_PRODUCT = ['U' => 'N', 'T' => '1', 'K' => 'I', 'W' => 'N'];
+    private const DEFAULT_DOMESTIC_PRODUCT = 'N';
 
     private const DEFAULT_PRODUCT = 'U';
     private const DEFAULT_DESCRIPTION = 'Spare parts for plastics machinery';
@@ -91,7 +94,7 @@ class DhlShipmentService
         $shipper = $this->shipperFromWarehouse($this->resolveWarehouse($order));
         $receiver = $this->receiverFromOrder($order);
         $dutiable = $this->isCustomsDeclarable($shipper['countryCode'], $receiver['countryCode']);
-        $productCode = $this->productCodeFor($order->getDeliveryType()?->getDhlProductCode(), $dutiable);
+        $productCode = $this->productCodeFor($order->getDeliveryType()?->getDhlProductCode(), $dutiable, $shipper['countryCode'] === $receiver['countryCode']);
         $shippingDate = $this->defaultShippingDate();
         $lineItems = $this->lineItemsFromOrder($order);
         $totalWeight = round(array_sum(array_map(static fn (array $l) => $l['netWeight'] ?? 0, $lineItems)), 3);
@@ -126,6 +129,7 @@ class DhlShipmentService
                 $rateError = $e->getMessage();
             }
         }
+        $productCode = $this->offeredProductCode($productCode, $rates);
 
         $prefill = [
             'shipper' => $shipper,
@@ -903,11 +907,40 @@ class DhlShipmentService
         return !($origin?->isEuropeanUnion() && $destination?->isEuropeanUnion());
     }
 
-    private function productCodeFor(?string $configured, bool $dutiable): string
+    /**
+     * The delivery type names an EU product (U, T, K, W, …); DHL sells the same
+     * service under a different code for dutiable (P, Y, E, H) and for domestic
+     * (N, 1, I) shipments — "U" to an Austrian address is refused with error 1001.
+     */
+    private function productCodeFor(?string $configured, bool $dutiable, bool $domestic = false): string
     {
         $code = $configured ?: self::DEFAULT_PRODUCT;
+        $base = array_search($code, self::DUTIABLE_PRODUCT, true) ?: $code;
 
-        return $dutiable ? (self::DUTIABLE_PRODUCT[$code] ?? $code) : (array_search($code, self::DUTIABLE_PRODUCT, true) ?: $code);
+        if ($domestic) {
+            return self::DOMESTIC_PRODUCT[$base] ?? self::DEFAULT_DOMESTIC_PRODUCT;
+        }
+
+        return $dutiable ? (self::DUTIABLE_PRODUCT[$base] ?? $base) : $base;
+    }
+
+    /**
+     * When DHL quoted products for this lane, the default must be one of them:
+     * keep the computed code if it was quoted, else take the cheapest priced
+     * product that needs no special agreement. No quotes → keep the code.
+     *
+     * @param array<int, array{productCode: string, price: ?float, requiresAgreement: bool}> $rates
+     */
+    private function offeredProductCode(string $code, array $rates): string
+    {
+        if ($rates === [] || in_array($code, array_column($rates, 'productCode'), true)) {
+            return $code;
+        }
+
+        $bookable = array_filter($rates, static fn (array $r) => $r['price'] !== null && !$r['requiresAgreement']);
+        usort($bookable, static fn (array $a, array $b) => $a['price'] <=> $b['price']);
+
+        return $bookable[0]['productCode'] ?? $code;
     }
 
     private function productNameFromRates(array $input, string $code): ?string
