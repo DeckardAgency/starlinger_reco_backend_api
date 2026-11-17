@@ -213,6 +213,18 @@
 <div class="section">
     <div class="section-title">Customer Information</div>
     <div class="info-grid">
+        {# The company the order is FOR: the managed client when a client agent ordered on its behalf, else the user's own company. #}
+        {% set orderedFor = order.onBehalfOfClient ?: (order.user ? order.user.client : null) %}
+        <div class="info-row">
+            <div class="info-label">Company:</div>
+            <div class="info-value">{{ orderedFor ? orderedFor.name : '—' }}</div>
+        </div>
+        {% if order.onBehalfOfClient and order.user %}
+            <div class="info-row">
+                <div class="info-label">Ordered by (agent):</div>
+                <div class="info-value">{{ order.user.client ? order.user.client.name ~ ' — ' : '' }}{{ order.user.fullName|trim ?: order.user.email }} ({{ order.user.email }})</div>
+            </div>
+        {% endif %}
         <div class="info-row">
             <div class="info-label">Customer Email:</div>
             <div class="info-value">{{ order.user.email }}</div>
@@ -229,18 +241,15 @@
 <div class="section">
     <div class="section-title">Addresses</div>
     <div class="info-grid">
-        {% if order.shippingAddress %}
-            <div class="info-row">
-                <div class="info-label">Shipping Address:</div>
-                <div class="info-value">{{ order.shippingAddress }}</div>
-            </div>
-        {% endif %}
-        {% if order.billingAddress %}
-            <div class="info-row">
-                <div class="info-label">Billing Address:</div>
-                <div class="info-value">{{ order.billingAddress }}</div>
-            </div>
-        {% endif %}
+        {# Both rows always print — an empty value shows as "—" rather than silently disappearing. #}
+        <div class="info-row">
+            <div class="info-label">Shipping Address:</div>
+            <div class="info-value">{{ order.shippingAddress ?: '—' }}</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Billing Address:</div>
+            <div class="info-value">{{ order.billingAddress ?: '—' }}</div>
+        </div>
     </div>
 </div>
 

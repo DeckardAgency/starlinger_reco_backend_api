@@ -28,7 +28,10 @@ use Symfony\Component\Validator\Constraints as Assert;
             // Effectively-static master data: let the browser cache it for 1h.
             // max_age only (private cache) — never shared_max_age, since responses
             // are credentialed and must not be cached by a shared proxy/CDN.
-            cacheHeaders: ['max_age' => 3600]
+            cacheHeaders: ['max_age' => 3600],
+            // Master data (~266 rows): always return the whole list so country
+            // pickers never silently lose rows to the 30/100 paging caps.
+            paginationEnabled: false
         ),
         new Post(
             normalizationContext: ['groups' => ['country:read']],

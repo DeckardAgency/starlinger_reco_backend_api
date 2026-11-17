@@ -119,18 +119,27 @@ class OrderStatusChangeProcessor implements ProcessorInterface
                 Order::STATUS_CANCELED => 'cancel',
             ],
             Order::STATUS_WAITING_FOR_PAYMENT => [
-                Order::STATUS_IN_PROCESS => 'payment_received',
+                Order::STATUS_PAID => 'payment_received',
+                Order::STATUS_CANCELED => 'cancel',
+            ],
+            Order::STATUS_PAID => [
+                Order::STATUS_IN_PROCESS => 'start_processing',
+                Order::STATUS_READY_FOR_SHIPMENT => 'ready_to_ship',
                 Order::STATUS_CANCELED => 'cancel',
             ],
             Order::STATUS_READY_FOR_SHIPMENT => [
                 Order::STATUS_SHIPPED => 'ship',
+                Order::STATUS_WAITING_FOR_PAYMENT => 'await_payment',
                 Order::STATUS_CANCELED => 'cancel',
             ],
             Order::STATUS_SHIPPED => [
                 Order::STATUS_DELIVERED => 'deliver',
+                Order::STATUS_WAITING_FOR_PAYMENT => 'await_payment',
                 Order::STATUS_REVERSAL => 'reverse',
             ],
             Order::STATUS_DELIVERED => [
+                Order::STATUS_PAID => 'payment_received',
+                Order::STATUS_WAITING_FOR_PAYMENT => 'await_payment',
                 Order::STATUS_REVERSAL => 'reverse',
             ],
         ];

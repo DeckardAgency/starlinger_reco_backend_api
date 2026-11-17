@@ -15,10 +15,12 @@ use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiProperty;
 use App\Filter\ClientSearchFilter;
+use App\Filter\MissingDeliveryAddressFilter;
 use App\State\Processor\ClientUsersProcessor;
 use Doctrine\ORM\Mapping as ORM;
 use App\Repository\ClientRepository;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Annotation\SerializedName;
 
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -55,13 +57,13 @@ use Symfony\Component\Validator\Constraints as Assert;
 )]
 #[ApiFilter(SearchFilter::class, properties: [
     'name' => 'partial',
-    'code' => 'exact',
-    'email' => 'partial',
-    'accountGroup.id' => 'exact'
+    'code' => 'partial',
+    'email' => 'partial'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isArchived', 'isActive', 'isClientAgent'])]
 #[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'code', 'vatNumber', 'email', 'isActive', 'purchaseLimit', 'amountSpent'])]
 #[ApiFilter(ClientSearchFilter::class)]
+#[ApiFilter(MissingDeliveryAddressFilter::class)]
 #[ORM\Entity(repositoryClass: ClientRepository::class)]
 #[ORM\Table]
 #[ORM\Index(name: "idx_client_code", columns: ["code"])]
@@ -173,11 +175,6 @@ class Client
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     #[Groups(['client:read', 'client:write', 'user:read', 'order:read'])]
     private bool $isArchived = false;
-
-    #[ORM\ManyToOne(targetEntity: AccountGroup::class)]
-    #[ORM\JoinColumn(name: 'account_group_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
-    #[Groups(['client:read', 'client:write'])]
-    private ?AccountGroup $accountGroup = null;
 
     /**
      * @var Collection<int, Address>
@@ -497,17 +494,6 @@ class Client
         return $this;
     }
 
-    public function getAccountGroup(): ?AccountGroup
-    {
-        return $this->accountGroup;
-    }
-
-    public function setAccountGroup(?AccountGroup $accountGroup): static
-    {
-        $this->accountGroup = $accountGroup;
-        return $this;
-    }
-
     public function getMaxActiveUsers(): ?int
     {
         return $this->maxActiveUsers;
@@ -546,6 +532,24 @@ class Client
     public function getAddresses(): Collection
     {
         return $this->addresses;
+    }
+
+    /**
+     * True when at least one active delivery address exists. Checkout needs a shipping
+     * address, so users of a client without one cannot place orders — both frontends
+     * flag this (admin client list/detail, webshop banner) instead of re-deriving it.
+     */
+    #[Groups(['client:read', 'client:read:details'])]
+    #[SerializedName('hasActiveDeliveryAddress')]
+    public function getHasActiveDeliveryAddress(): bool
+    {
+        foreach ($this->addresses as $address) {
+            if ($address->getIsActive() && $address->getIsDelivery()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function addAddress(Address $address): static
@@ -612,6 +616,26 @@ class Client
     public function getManagedClientCount(): int
     {
         return $this->managedClients->count();
+    }
+
+    /**
+     * Read-only {id, name, code} of every managed client, sorted by name, so the
+     * admin can show the list without resolving each IRI. `managedClients` stays
+     * the writable IRI list.
+     *
+     * @return list<array{id: int|null, name: string|null, code: string|null}>
+     */
+    #[Groups(['client:read:details'])]
+    #[SerializedName('managedClientSummaries')]
+    public function getManagedClientSummaries(): array
+    {
+        $clients = $this->managedClients->toArray();
+        usort($clients, static fn (Client $a, Client $b): int => strcasecmp((string) $a->getName(), (string) $b->getName()));
+
+        return array_map(
+            static fn (Client $c): array => ['id' => $c->getId(), 'name' => $c->getName(), 'code' => $c->getCode()],
+            $clients
+        );
     }
 
     public function managesClient(Client $client): bool

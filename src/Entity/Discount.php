@@ -24,6 +24,16 @@ use Symfony\Component\Serializer\Annotation\SerializedName;
 use Gedmo\Mapping\Annotation as Gedmo;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * A price adjustment for one or more clients: ONE signed percentage applied to
+ * every product (optionally narrowed by product type, or to specific products via
+ * ProductDiscount links). Negative = discount (price down, shown as "-X%"),
+ * positive = markup (price up, shown to the client as a plain price).
+ *
+ * A discount always targets at least one client; there is no "global" discount.
+ * When several apply, product-specific links beat client-wide ones and within a
+ * tier the lowest id wins (see DiscountResolver).
+ */
 #[ApiResource(
     operations: [
         new GetCollection(
@@ -53,10 +63,10 @@ use Symfony\Component\Validator\Constraints as Assert;
     'name' => 'partial'
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['isActive'])]
-#[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'isActive', 'priority', 'dateValidFrom', 'dateValidTo'])]
+#[ApiFilter(OrderFilter::class, properties: ['id', 'name', 'isActive', 'adjustmentPercent'])]
 #[ORM\Entity(repositoryClass: DiscountRepository::class)]
 #[ORM\Table]
-#[ORM\Index(name: 'idx_discount_active_priority', columns: ['is_active', 'priority'])]
+#[ORM\Index(name: 'idx_discount_active', columns: ['is_active'])]
 class Discount
 {
     #[ORM\Id]
@@ -75,21 +85,18 @@ class Discount
     #[SerializedName('isActive')]
     private bool $isActive = true;
 
-    #[ORM\Column(type: 'datetime', nullable: true)]
+    /**
+     * Signed percentage as a decimal string (e.g. "-20.0000" = 20 % off,
+     * "15.0000" = 15 % markup). Never 0, never -100 or below.
+     */
+    #[ORM\Column(name: 'adjustment_percent', type: 'decimal', precision: 12, scale: 4)]
+    #[Assert\NotNull(message: 'Enter the adjustment in percent.')]
+    #[Assert\Type(type: 'numeric', message: 'The adjustment must be a number.')]
+    #[Assert\GreaterThan(value: -100, message: 'A discount must be less than 100 %.')]
+    #[Assert\LessThanOrEqual(value: 999, message: 'A markup cannot exceed 999 %.')]
+    #[Assert\NotEqualTo(value: 0, message: 'An adjustment of 0 % does nothing: use a negative value for a discount or a positive one for a markup.')]
     #[Groups(['discount:read', 'discount:write'])]
-    private ?\DateTimeInterface $dateValidFrom = null;
-
-    #[ORM\Column(type: 'datetime', nullable: true)]
-    #[Groups(['discount:read', 'discount:write'])]
-    private ?\DateTimeInterface $dateValidTo = null;
-
-    #[ORM\Column(type: 'integer', nullable: true)]
-    #[Groups(['discount:read', 'discount:write'])]
-    private ?int $priority = 0;
-
-    #[ORM\Column(type: 'decimal', precision: 12, scale: 4, nullable: true)]
-    #[Groups(['discount:read', 'discount:write'])]
-    private ?string $discountPercent = null;
+    private ?string $adjustmentPercent = null;
 
     #[ORM\Column(type: 'text', nullable: true)]
     #[Groups(['discount:read', 'discount:write'])]
@@ -116,26 +123,20 @@ class Discount
     private ?\DateTimeInterface $updatedAt = null;
 
     /**
-     * @var Collection<int, AccountGroup>
-     */
-    #[ORM\ManyToMany(targetEntity: AccountGroup::class)]
-    #[ORM\JoinTable(name: 'discount_account_group')]
-    #[Groups(['discount:read', 'discount:write'])]
-    #[ApiProperty(readableLink: false, writableLink: false)]
-    private Collection $accountGroups;
-
-    /**
+     * The clients this adjustment applies to. Required: a discount without
+     * clients applies to nobody.
+     *
      * @var Collection<int, Client>
      */
     #[ORM\ManyToMany(targetEntity: Client::class)]
     #[ORM\JoinTable(name: 'discount_client')]
+    #[Assert\Count(min: 1, minMessage: 'Select at least one client.')]
     #[Groups(['discount:read', 'discount:write'])]
     #[ApiProperty(readableLink: false, writableLink: false)]
     private Collection $clients;
 
     public function __construct()
     {
-        $this->accountGroups = new ArrayCollection();
         $this->clients = new ArrayCollection();
     }
 
@@ -172,47 +173,14 @@ class Discount
         return $this;
     }
 
-    public function getDateValidFrom(): ?\DateTimeInterface
+    public function getAdjustmentPercent(): ?string
     {
-        return $this->dateValidFrom;
+        return $this->adjustmentPercent;
     }
 
-    public function setDateValidFrom(?\DateTimeInterface $dateValidFrom): static
+    public function setAdjustmentPercent(?string $adjustmentPercent): static
     {
-        $this->dateValidFrom = $dateValidFrom;
-        return $this;
-    }
-
-    public function getDateValidTo(): ?\DateTimeInterface
-    {
-        return $this->dateValidTo;
-    }
-
-    public function setDateValidTo(?\DateTimeInterface $dateValidTo): static
-    {
-        $this->dateValidTo = $dateValidTo;
-        return $this;
-    }
-
-    public function getPriority(): ?int
-    {
-        return $this->priority;
-    }
-
-    public function setPriority(?int $priority): static
-    {
-        $this->priority = $priority;
-        return $this;
-    }
-
-    public function getDiscountPercent(): ?string
-    {
-        return $this->discountPercent;
-    }
-
-    public function setDiscountPercent(?string $discountPercent): static
-    {
-        $this->discountPercent = $discountPercent;
+        $this->adjustmentPercent = $adjustmentPercent;
         return $this;
     }
 
@@ -263,28 +231,6 @@ class Discount
     public function setUpdatedAt(\DateTimeInterface $updatedAt): static
     {
         $this->updatedAt = $updatedAt;
-        return $this;
-    }
-
-    /**
-     * @return Collection<int, AccountGroup>
-     */
-    public function getAccountGroups(): Collection
-    {
-        return $this->accountGroups;
-    }
-
-    public function addAccountGroup(AccountGroup $accountGroup): static
-    {
-        if (!$this->accountGroups->contains($accountGroup)) {
-            $this->accountGroups->add($accountGroup);
-        }
-        return $this;
-    }
-
-    public function removeAccountGroup(AccountGroup $accountGroup): static
-    {
-        $this->accountGroups->removeElement($accountGroup);
         return $this;
     }
 

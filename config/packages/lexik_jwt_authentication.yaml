@@ -37,13 +37,12 @@ lexik_jwt_authentication:
     # Uses the 'email' property accessor (getEmail()) to populate the JWT claim
     user_id_claim: email
 
-# Prod: the SPAs (vercel.app) call this API (cloudwaysapps.com) directly cross-site —
-# the former Vercel /api proxy is gone (its datacenter egress IPs tripped the host's
-# Imunify360 bot-protection). A cross-site cookie needs SameSite=None, and because
-# third-party cookies are blocked by Safari/Chrome-incognito, it must also be
-# Partitioned (CHIPS): the browser then stores it per top-level site, which is exactly
-# right for a single-frontend auth cookie. Partitioned requires Secure, so
-# JWT_COOKIE_SECURE must be true in prod.
+# Prod: the auth cookie is SameSite=None + Partitioned (CHIPS). This was introduced
+# when the SPAs called the API cross-site (Vercel → Cloudways, both retired Nov 2026);
+# on grafit.net the apps and the API share a parent domain, where it works as a
+# first-party cookie too (the browser stores it per top-level site). Could be relaxed
+# to Lax now, kept for safety. Partitioned requires Secure, so JWT_COOKIE_SECURE must
+# be true in prod.
 when@prod:
     lexik_jwt_authentication:
         set_cookies:

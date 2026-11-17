@@ -43,6 +43,11 @@ class MeController extends AbstractController
                 'code' => $client->getCode(),
                 'isActive' => $client->getIsActive(),
                 'isArchived' => $client->getIsArchived(),
+                'hasActiveDeliveryAddress' => $client->getHasActiveDeliveryAddress(),
+                'isClientAgent' => $client->getIsClientAgent(),
+                // Budget strip: limit (null/0 = unlimited) and open payments (unpaid orders).
+                'purchaseLimit' => $client->getPurchaseLimit() === null ? null : (float) $client->getPurchaseLimit(),
+                'amountSpent' => (float) ($client->getAmountSpent() ?? 0),
             ],
         ]);
     }

@@ -9,15 +9,16 @@ use App\Entity\ProductDiscount;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
-class ResolvedDiscount
-{
-    public function __construct(
-        public readonly float $percent,
-        public readonly ?float $fixedPrice,
-        public readonly string $source // 'campaign' or 'product'
-    ) {}
-}
-
+/**
+ * Picks the price adjustments for a product + client: at most ONE markup and at
+ * most ONE discount, which apply together (Nov 2026). Only active discounts that
+ * list the client are considered (guests and unlisted clients get nothing).
+ * Precedence, separately for the markup and for the discount: a discount linked
+ * to the product (ProductDiscount) beats a client-wide one (no product links);
+ * within a tier the lowest id wins. A value is a fixed price override (always a
+ * discount) or a signed percentage (negative = discount, positive = markup) —
+ * PriceAdjuster turns the pair into a price.
+ */
 class DiscountResolver implements ResetInterface
 {
     public function __construct(
@@ -47,38 +48,58 @@ class DiscountResolver implements ResetInterface
     private ?array $productSpecificData = null;
 
     /**
-     * Resolve the best applicable campaign discount for a product + client combination.
+     * Resolve the markup and the discount that apply to a product + client. The
+     * candidates are walked in precedence order (product-specific links first, then
+     * client-wide, each by id) and the first markup and the first discount win.
      */
-    public function resolveDiscount(Product $product, ?Client $client): ?ResolvedDiscount
+    public function resolveAdjustments(Product $product, ?Client $client): ResolvedAdjustments
     {
-        return $this->findCampaignDiscount($product, $client);
-    }
-
-    private function findCampaignDiscount(Product $product, ?Client $client): ?ResolvedDiscount
-    {
-        $now = new \DateTime();
-
-        // 1. Check product-specific campaign discounts (ProductDiscount links)
-        $productSpecific = $this->findProductSpecificCampaign($product, $client, $now);
-        if ($productSpecific !== null) {
-            return $productSpecific;
+        if ($client === null) {
+            return ResolvedAdjustments::none();
         }
 
-        // 2. Check client-wide campaign discounts (no products linked = applies to all products)
-        return $this->findClientWideCampaign($product, $client, $now);
+        $markup = null;
+        $discount = null;
+        foreach ($this->candidates($product, $client) as $candidate) {
+            $isMarkup = $candidate->fixedPrice === null && $candidate->percent > 0;
+            if ($isMarkup) {
+                $markup ??= $candidate;
+            } else {
+                $discount ??= $candidate;
+            }
+            if ($markup !== null && $discount !== null) {
+                break;
+            }
+        }
+
+        return new ResolvedAdjustments($markup, $discount);
     }
 
-    private function findProductSpecificCampaign(Product $product, ?Client $client, \DateTime $now): ?ResolvedDiscount
+    /**
+     * Every applicable adjustment in precedence order.
+     *
+     * @return iterable<ResolvedDiscount>
+     */
+    private function candidates(Product $product, Client $client): iterable
     {
-        $data = $this->getProductSpecificData($now);
+        // 1. Discounts linked to this product (ProductDiscount links)
+        yield from $this->productSpecificCandidates($product, $client);
+
+        // 2. Client-wide discounts (no products linked = applies to all products)
+        yield from $this->clientWideCandidates($product, $client);
+    }
+
+    /** @return iterable<ResolvedDiscount> */
+    private function productSpecificCandidates(Product $product, Client $client): iterable
+    {
+        $data = $this->getProductSpecificData();
 
         $productDiscounts = $data['pdsByProduct'][$product->getId()] ?? [];
         if (empty($productDiscounts)) {
-            return null;
+            return;
         }
 
-        // Iterate discounts in global priority order, considering only those linked to
-        // this product (identical selection to the former per-product query).
+        // Iterate discounts in id order, considering only those linked to this product.
         foreach ($data['order'] as $discountId) {
             if (!isset($productDiscounts[$discountId])) {
                 continue;
@@ -92,52 +113,37 @@ class DiscountResolver implements ResetInterface
                 continue;
             }
 
-            $pd = $productDiscounts[$discountId] ?? null;
-            if (!$pd) {
-                continue;
-            }
+            /** @var ProductDiscount $pd */
+            $pd = $productDiscounts[$discountId];
 
-            if ($pd->getDateValidFrom() !== null && $pd->getDateValidFrom() > $now) {
-                continue;
-            }
-            if ($pd->getDateValidTo() !== null && $pd->getDateValidTo() < $now) {
-                continue;
-            }
-
-            $fixedPrice = null;
-            $percent = 0.0;
-
+            // Value precedence: fixed price override → per-link rebate → the discount's percent.
             if ($pd->getDiscountPriceBase() !== null) {
-                $fixedPrice = (float) $pd->getDiscountPriceBase();
+                yield new ResolvedDiscount(0.0, (float) $pd->getDiscountPriceBase(), 'campaign');
+                continue;
             }
 
-            if ($pd->getRebate() !== null && (float) $pd->getRebate() > 0) {
-                $percent = (float) $pd->getRebate();
+            $percent = (float) ($pd->getRebate() ?? 0);
+            if ($percent == 0.0) {
+                $percent = (float) ($discount->getAdjustmentPercent() ?? 0);
             }
 
-            if ($fixedPrice === null && $percent <= 0 && $discount->getDiscountPercent() !== null) {
-                $percent = (float) $discount->getDiscountPercent();
-            }
-
-            if ($fixedPrice !== null || $percent > 0) {
-                return new ResolvedDiscount($percent, $fixedPrice, 'campaign');
+            if ($percent != 0.0) {
+                yield new ResolvedDiscount($percent, null, 'campaign');
             }
         }
-
-        return null;
     }
 
     /**
-     * All active, in-date product-specific discount links, loaded in ONE query and
-     * indexed by product id, cached for the request. Previously this ran a query per
-     * product while serializing a product/order collection (the N+1). Returns:
+     * All product links of active discounts, loaded in ONE query and indexed by
+     * product id, cached for the request. Previously this ran a query per product
+     * while serializing a product/order collection (the N+1). Returns:
      *   'pdsByProduct'  => [productId => [discountId => ProductDiscount]]
      *   'discountsById' => [discountId => Discount]
-     *   'order'         => [discountId, ...] in priority order (DESC), de-duplicated
+     *   'order'         => [discountId, ...] by id ASC, de-duplicated
      *
      * @return array{pdsByProduct: array<int, array<int, ProductDiscount>>, discountsById: array<int, Discount>, order: int[]}
      */
-    private function getProductSpecificData(\DateTime $now): array
+    private function getProductSpecificData(): array
     {
         if ($this->productSpecificData !== null) {
             return $this->productSpecificData;
@@ -148,11 +154,8 @@ class DiscountResolver implements ResetInterface
             ->from(ProductDiscount::class, 'pd')
             ->join(Discount::class, 'd', 'WITH', 'pd.discountId = d.id')
             ->where('d.isActive = true')
-            ->andWhere('(d.dateValidFrom IS NULL OR d.dateValidFrom <= :now)')
-            ->andWhere('(d.dateValidTo IS NULL OR d.dateValidTo >= :now)')
-            ->setParameter('now', $now)
-            ->orderBy('d.priority', 'DESC')
-            ->addOrderBy('d.id', 'ASC')
+            ->orderBy('d.id', 'ASC')
+            ->addOrderBy('pd.id', 'ASC')
             ->getQuery()
             ->getResult();
 
@@ -161,7 +164,8 @@ class DiscountResolver implements ResetInterface
         $order = [];
         foreach ($results as $entity) {
             if ($entity instanceof ProductDiscount) {
-                $pdsByProduct[$entity->getProductId()][$entity->getDiscountId()] = $entity;
+                // One link per (product, discount) is expected; keep the first (lowest id).
+                $pdsByProduct[$entity->getProductId()][$entity->getDiscountId()] ??= $entity;
             } elseif ($entity instanceof Discount) {
                 if (!isset($discountsById[$entity->getId()])) {
                     $order[] = $entity->getId();
@@ -178,17 +182,14 @@ class DiscountResolver implements ResetInterface
     }
 
     /**
-     * Find discounts that target this client (or their account group) but have NO products linked.
-     * These apply to ALL products for that client.
+     * Discounts that target this client but have NO products linked: they apply to
+     * ALL products (within productTypes, if set) for that client.
+     *
+     * @return iterable<ResolvedDiscount>
      */
-    private function findClientWideCampaign(Product $product, ?Client $client, \DateTime $now): ?ResolvedDiscount
+    private function clientWideCandidates(Product $product, Client $client): iterable
     {
-        if ($client === null) {
-            return null;
-        }
-
-        // Get all active discounts within date range (cached per request)
-        $discounts = $this->getActiveDiscounts($now);
+        $discounts = $this->getActiveDiscounts();
         $linkedDiscountIds = $this->getLinkedDiscountIds();
 
         foreach ($discounts as $discount) {
@@ -197,7 +198,6 @@ class DiscountResolver implements ResetInterface
                 continue;
             }
 
-            // This discount has no products — check if it targets this client
             if (!$this->isDiscountApplicableToClient($discount, $client)) {
                 continue;
             }
@@ -206,33 +206,27 @@ class DiscountResolver implements ResetInterface
                 continue;
             }
 
-            $percent = $discount->getDiscountPercent();
-            if ($percent !== null && (float) $percent > 0) {
-                return new ResolvedDiscount((float) $percent, null, 'campaign');
+            $percent = (float) ($discount->getAdjustmentPercent() ?? 0);
+            if ($percent != 0.0) {
+                yield new ResolvedDiscount($percent, null, 'campaign');
             }
         }
-
-        return null;
     }
 
     /**
-     * Active, in-date discounts. Cached for the lifetime of the request so a
+     * Active discounts by id ASC. Cached for the lifetime of the request so a
      * product collection doesn't re-run this query for every product.
      *
      * @return Discount[]
      */
-    private function getActiveDiscounts(\DateTime $now): array
+    private function getActiveDiscounts(): array
     {
         if ($this->activeDiscounts === null) {
             $this->activeDiscounts = $this->entityManager->createQueryBuilder()
                 ->select('d')
                 ->from(Discount::class, 'd')
                 ->where('d.isActive = true')
-                ->andWhere('(d.dateValidFrom IS NULL OR d.dateValidFrom <= :now)')
-                ->andWhere('(d.dateValidTo IS NULL OR d.dateValidTo >= :now)')
-                ->setParameter('now', $now)
-                ->orderBy('d.priority', 'DESC')
-                ->addOrderBy('d.id', 'ASC')
+                ->orderBy('d.id', 'ASC')
                 ->getQuery()
                 ->getResult();
         }
@@ -284,38 +278,17 @@ class DiscountResolver implements ResetInterface
         return in_array($type, $allowed, true);
     }
 
-    private function isDiscountApplicableToClient(Discount $discount, ?Client $client): bool
+    /**
+     * A discount applies to exactly the clients it lists. No clients = nobody.
+     */
+    private function isDiscountApplicableToClient(Discount $discount, Client $client): bool
     {
-        $targetClients = $discount->getClients();
-        $targetAccountGroups = $discount->getAccountGroups();
-
-        // If no targets specified, discount is global (applies to everyone)
-        if ($targetClients->isEmpty() && $targetAccountGroups->isEmpty()) {
-            return true;
-        }
-
-        if ($client === null) {
-            return false;
-        }
-
-        // Check if client is directly targeted
-        foreach ($targetClients as $targetClient) {
+        foreach ($discount->getClients() as $targetClient) {
             if ($targetClient->getId() === $client->getId()) {
                 return true;
             }
         }
 
-        // Check if client's account group is targeted
-        $clientAccountGroup = $client->getAccountGroup();
-        if ($clientAccountGroup !== null) {
-            foreach ($targetAccountGroups as $targetGroup) {
-                if ($targetGroup->getId() === $clientAccountGroup->getId()) {
-                    return true;
-                }
-            }
-        }
-
         return false;
     }
-
 }

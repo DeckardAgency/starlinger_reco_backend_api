@@ -17,6 +17,7 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\OpenApi\Model;
 use ApiPlatform\OpenApi\Model\Operation;
+use App\Controller\OrderCheckoutController;
 use App\Controller\OrderPdfController;
 use App\Repository\OrderRepository;
 use App\State\OrderDraftProvider;
@@ -39,6 +40,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Index(name: "idx_order_shipping_address_id", columns: ["shipping_address_id"])]
 #[ORM\Index(name: "idx_order_total_amount", columns: ["total_amount"])]
 #[ORM\Index(name: "idx_order_is_archived", columns: ["is_archived"])]
+#[ORM\Index(name: "idx_order_checkout_reference", columns: ["checkout_reference"])]
 #[ApiResource(
     operations: [
         // Existing operations
@@ -117,6 +119,52 @@ use Symfony\Component\Validator\Constraints as Assert;
             security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN')"
         ),
 
+        // Multi-client checkout: one order per (managed) client, all-or-nothing.
+        // Custom JSON payload (not an Order), so the body is read by the controller
+        // and the batch is built/persisted by App\Service\OrderCheckoutService.
+        new Post(
+            uriTemplate: '/orders/checkout',
+            name: 'order_checkout',
+            controller: OrderCheckoutController::class,
+            security: "is_granted('ROLE_CLIENT') or is_granted('ROLE_CLIENT_ADMIN') or is_granted('ROLE_ADMIN') or is_granted('ROLE_USER_CLIENT_AGENT')",
+            inputFormats: ['jsonld' => ['application/ld+json'], 'json' => ['application/json']],
+            outputFormats: ['jsonld' => ['application/ld+json'], 'json' => ['application/json']],
+            read: false,
+            deserialize: false,
+            validate: false,
+            write: false,
+            serialize: false,
+            openapi: new Model\Operation(
+                tags: ['Order'],
+                summary: 'Checkout a (mixed-client) cart: one order per client, atomically',
+                description: 'Creates ONE order per `groups[]` entry in a single transaction. A client agent groups its cart '
+                    . 'per managed client (`onBehalfOfClient`; `null` = the caller\'s own company) and picks that client\'s '
+                    . 'delivery address per group. Every order is priced, taxed and checked against the purchase limit of '
+                    . 'its client exactly like `POST /orders`; if any group fails (limit exceeded, foreign address, not an '
+                    . 'authorised agent) nothing is created. All orders of the call share a `checkoutReference`; order '
+                    . 'notifications are sent once the whole batch is committed.',
+                requestBody: new Model\RequestBody(
+                    description: 'The cart, grouped per client',
+                    content: new \ArrayObject([
+                        'application/ld+json' => ['schema' => OrderCheckoutController::OPENAPI_REQUEST_SCHEMA],
+                        'application/json' => ['schema' => OrderCheckoutController::OPENAPI_REQUEST_SCHEMA],
+                    ]),
+                    required: true
+                ),
+                responses: [
+                    '201' => new Model\Response(
+                        description: 'All orders created',
+                        content: new \ArrayObject([
+                            'application/json' => ['schema' => OrderCheckoutController::OPENAPI_RESPONSE_SCHEMA],
+                            'application/ld+json' => ['schema' => OrderCheckoutController::OPENAPI_RESPONSE_SCHEMA],
+                        ])
+                    ),
+                    '400' => new Model\Response(description: 'Invalid payload, address not belonging to the group\'s client, duplicate client, or a purchase limit exceeded (`detail` explains which); nothing was created'),
+                    '403' => new Model\Response(description: 'Caller may not act on behalf of one of the clients; nothing was created'),
+                ]
+            )
+        ),
+
         // New operations for drafts
         new GetCollection(
             uriTemplate: '/drafts',
@@ -160,7 +208,8 @@ use Symfony\Component\Validator\Constraints as Assert;
     'user.email' => 'exact',
     'status' => 'exact',
     'user.client.code' => 'exact',
-    'orderNumber' => 'partial'
+    'orderNumber' => 'partial',
+    'checkoutReference' => 'exact'
 ])]
 #[ApiFilter(DateFilter::class, properties: ['createdAt'])]
 #[ApiFilter(BooleanFilter::class, properties: ['isDraft'])]
@@ -175,6 +224,8 @@ class Order
     public const STATUS_WAITING_FOR_PAYMENT = 'waiting_for_payment';
     public const STATUS_READY_FOR_SHIPMENT = 'ready_for_shipment';
     public const STATUS_SHIPPED = 'shipped';
+    /** Payment registered. A status of its own (not a flag) by product decision, Nov 2026. */
+    public const STATUS_PAID = 'paid';
 
     /**
      * All valid order statuses. Used by the Assert\Choice on $status so a client
@@ -194,6 +245,7 @@ class Order
             self::STATUS_WAITING_FOR_PAYMENT,
             self::STATUS_READY_FOR_SHIPMENT,
             self::STATUS_SHIPPED,
+            self::STATUS_PAID,
         ];
     }
 
@@ -248,6 +300,15 @@ class Order
     #[Groups(['order:read', 'order:write'])]
     #[Assert\Length(max: 100)]
     private ?string $customerReference = null;
+
+    /**
+     * Groups the orders created by one `POST /orders/checkout` call (a client
+     * agent's mixed cart becomes one order per managed client). Server-set,
+     * e.g. "CHK-20261018-A1B2C3"; null for orders placed any other way.
+     */
+    #[ORM\Column(length: 40, nullable: true)]
+    #[Groups(['order:read'])]
+    private ?string $checkoutReference = null;
 
     /**
      * Order reference in Starlinger's ERP (legacy order_entity.remote_code).
@@ -361,6 +422,16 @@ class Order
     #[ORM\JoinColumn(nullable: true)]
     #[Groups(['order:read'])]
     private ?User $dispatchedBy = null;
+
+    /**
+     * When the payment was registered (the order entered STATUS_PAID). Kept as a
+     * fact of its own because the status moves on afterwards (paid -> in process
+     * -> shipped ...): the client's open payments are the unpaid, non-cancelled
+     * orders, i.e. those with paidAt NULL. Read-only; set by OrderPriceProcessor.
+     */
+    #[ORM\Column(type: "datetime", nullable: true)]
+    #[Groups(['order:read'])]
+    private ?DateTimeInterface $paidAt = null;
 
     /**
      * @var Collection<int, OrderInfoRequest>
@@ -541,6 +612,18 @@ class Order
     public function setCustomerReference(?string $customerReference): static
     {
         $this->customerReference = $customerReference !== null ? (trim($customerReference) ?: null) : null;
+
+        return $this;
+    }
+
+    public function getCheckoutReference(): ?string
+    {
+        return $this->checkoutReference;
+    }
+
+    public function setCheckoutReference(?string $checkoutReference): static
+    {
+        $this->checkoutReference = $checkoutReference;
 
         return $this;
     }
@@ -928,6 +1011,25 @@ class Order
     {
         $this->dispatchedBy = $dispatchedBy;
         return $this;
+    }
+
+    public function getPaidAt(): ?DateTimeInterface
+    {
+        return $this->paidAt;
+    }
+
+    public function setPaidAt(?DateTimeInterface $paidAt): static
+    {
+        $this->paidAt = $paidAt;
+        return $this;
+    }
+
+    /** Open payment = submitted, not paid, not cancelled/reversed. Drafts never count. */
+    public function isOpenPayment(): bool
+    {
+        return !$this->isDraft
+            && $this->paidAt === null
+            && !in_array($this->status, [self::STATUS_DRAFT, self::STATUS_CANCELED, self::STATUS_REVERSAL], true);
     }
 
     // Cancellation getters and setters

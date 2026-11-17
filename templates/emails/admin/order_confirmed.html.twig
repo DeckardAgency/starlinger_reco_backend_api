@@ -14,11 +14,17 @@
 
     <div class="order-summary" style="margin: 20px 0;">
         <h3>Quick Summary:</h3>
+        {% set orderedFor = order.onBehalfOfClient ?: (order.user ? order.user.client : null) %}
         <ul>
+            <li><strong>Company:</strong> {{ orderedFor ? orderedFor.name : '—' }}</li>
+            {% if order.onBehalfOfClient and order.user %}
+                <li><strong>Ordered by (agent):</strong> {{ order.user.client ? order.user.client.name ~ ' — ' : '' }}{{ order.user.fullName|trim ?: order.user.email }} ({{ order.user.email }})</li>
+            {% endif %}
             <li><strong>Customer:</strong> {{ order.user.fullName }}</li>
             <li><strong>Total Amount:</strong> €{{ order.totalAmount|number_format(2, '.', ',') }}</li>
             <li><strong>Number of Items:</strong> {{ order.items|length }}</li>
-            <li><strong>Shipping Address:</strong> {{ order.shippingAddress|default('Not provided') }}</li>
+            {# Always printed (was already: default 'Not provided'); "—" matches the PDF and the submitted email. #}
+            <li><strong>Shipping Address:</strong> {{ order.shippingAddress ?: '—' }}</li>
         </ul>
     </div>
 

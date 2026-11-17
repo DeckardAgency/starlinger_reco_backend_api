@@ -136,7 +136,11 @@ final class PartnerApiHandoffTest extends WebTestCase
     public function testPartsInStockFilterAndRandomSelection(): void
     {
         $inStock = $this->get('/api/v1/products?inStock=true&search=' . urlencode('-' . $this->suffix));
-        self::assertSame([$this->partInStock->getId(), $this->partInactive->getId()], $this->ids($inStock), '/products does not hide inactive parts; inStock filters stock only');
+        // Since Nov 2026 inactive parts are hidden from customers (ActiveProductExtension);
+        // inStock filters stock only — the out-of-stock part stays listed without the filter.
+        self::assertSame([$this->partInStock->getId()], $this->ids($inStock), 'inactive parts hidden; inStock filters stock');
+        $all = $this->get('/api/v1/products?search=' . urlencode('-' . $this->suffix));
+        self::assertSame([$this->partInStock->getId(), $this->partOutOfStock->getId()], $this->ids($all), 'out-of-stock parts stay visible');
 
         $random = $this->get('/api/v1/products/random?limit=2');
         self::assertLessThanOrEqual(2, \count($random['member']));

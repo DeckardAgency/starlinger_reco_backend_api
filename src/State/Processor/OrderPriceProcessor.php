@@ -11,6 +11,7 @@ use App\Message\OrderCreatedMessage;
 use App\Message\OrderStatusChangedMessage;
 use App\Security\ClientAgentAuthorization;
 use App\Service\DiscountResolver;
+use App\Service\PriceAdjuster;
 use App\Service\PriceCalculator;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -26,11 +27,19 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
  */
 final class OrderPriceProcessor implements ProcessorInterface
 {
+    /**
+     * Context flag: skip dispatching OrderCreatedMessage after persisting. Set by
+     * batch callers (OrderCheckoutService) that wrap several orders in one DB
+     * transaction and dispatch the messages themselves once it has committed.
+     */
+    public const CONTEXT_DEFER_MESSAGES = 'defer_order_messages';
+
     public function __construct(
         private ProcessorInterface $persistProcessor,
         private EntityManagerInterface $entityManager,
         private PriceCalculator $priceCalculator,
         private DiscountResolver $discountResolver,
+        private PriceAdjuster $priceAdjuster,
         private LoggerInterface $logger,
         private Security $security,
         private MessageBusInterface $messageBus,
@@ -77,7 +86,8 @@ final class OrderPriceProcessor implements ProcessorInterface
                 if ($existingOrder) {
                     $originalOrder = [
                         'status' => $existingOrder->getStatus(),
-                        'isDraft' => $existingOrder->isDraft()
+                        'isDraft' => $existingOrder->isDraft(),
+                        'paidAt' => $existingOrder->getPaidAt(),
                     ];
                 }
             }
@@ -143,6 +153,17 @@ final class OrderPriceProcessor implements ProcessorInterface
             throw new BadRequestHttpException('Cannot create an order with no items.');
         }
 
+        // The order leaves the draft stage with this request (created as new, or a
+        // draft being submitted): the rules that only matter for real orders.
+        $becomesSubmitted = !$data->isDraft()
+            && ($isNewOrder || $isDraftSubmission || ($originalOrder['status'] ?? null) === Order::STATUS_DRAFT);
+        if ($becomesSubmitted && !$this->security->isGranted('ROLE_ADMIN')) {
+            if ($authenticatedUser instanceof User) {
+                $this->assertAgentOrdersForCustomers($data, $authenticatedUser);
+            }
+            $this->assertItemsAvailable($data);
+        }
+
         // Ensure all order items have the correct client-specific prices
         $this->updateOrderItemPrices($data);
 
@@ -186,6 +207,12 @@ final class OrderPriceProcessor implements ProcessorInterface
             }
 
             $this->handleWorkflowTransition($data, $originalOrder);
+
+            // Payment registered (via the transition or an admin force-set): record
+            // the fact once; the status moves on afterwards but paidAt stays.
+            if ($data->getStatus() === Order::STATUS_PAID && $data->getPaidAt() === null) {
+                $data->setPaidAt(new \DateTime());
+            }
         }
 
         // Purchase limit enforcement + client spending ledger (amountSpent).
@@ -194,8 +221,16 @@ final class OrderPriceProcessor implements ProcessorInterface
         // Process with the standard persist processor
         $result = $this->persistProcessor->process($data, $operation, $uriVariables, $context);
 
-        // Handle message dispatching after persistence
-        $this->handleMessageDispatching($data, $operation, $isNewOrder, $originalOrder, $isDraftSubmission, $modifiedBy);
+        // Handle message dispatching after persistence — unless a batch caller
+        // (checkout) asked to defer it until its surrounding transaction commits.
+        if (empty($context[self::CONTEXT_DEFER_MESSAGES])) {
+            $this->handleMessageDispatching($data, $operation, $isNewOrder, $originalOrder, $isDraftSubmission, $modifiedBy);
+        } else {
+            $this->logger->info('Order message dispatch deferred to the caller', [
+                'order_id' => $data->getId(),
+                'operation' => $operation->getName(),
+            ]);
+        }
 
         return $result;
     }
@@ -338,8 +373,8 @@ final class OrderPriceProcessor implements ProcessorInterface
                 }
             }
 
-            // Get the appropriate price
-            $price = $product->getPrice(); // Default price
+            // Base price: the client-specific price when one is valid, else the catalog price.
+            $basePrice = $product->getPrice();
             $isCustomPrice = false;
 
             if ($itemClient) {
@@ -347,41 +382,39 @@ final class OrderPriceProcessor implements ProcessorInterface
                 $clientProductPrice = $this->priceCalculator->getClientProductPrice($itemClient, $product);
 
                 if ($clientProductPrice && $clientProductPrice->isValid()) {
-                    $price = $clientProductPrice->getEffectivePrice();
+                    $basePrice = $clientProductPrice->getEffectivePrice();
                     $isCustomPrice = true;
 
                     $this->logger->debug('Applying client-specific price', [
                         'client' => $itemClient->getCode(),
                         'product' => $product->getName(),
                         'standard_price' => $product->getPrice(),
-                        'client_price' => $price,
+                        'client_price' => $basePrice,
                         'discount_percentage' => $clientProductPrice->getDiscountPercentage()
                     ]);
                 }
             }
 
-            // Apply campaign discount on top of resolved price
-            $resolved = $this->discountResolver->resolveDiscount($product, $itemClient);
-            if ($resolved !== null) {
-                if ($resolved->fixedPrice !== null) {
-                    $price = min($price, $resolved->fixedPrice);
-                } elseif ($resolved->percent > 0) {
-                    $price = round($price * (1 - $resolved->percent / 100), 2);
-                }
-            }
+            // Apply the campaign adjustments (markup and/or discount) on top of the base price.
+            $adjusted = $this->priceAdjuster->applyAdjustments(
+                $basePrice,
+                $this->discountResolver->resolveAdjustments($product, $itemClient)
+            );
+            $unitPrice = $adjusted->finalPrice;
 
-            // Store the original catalog price for discount tracking
-            $originalPrice = $product->getPrice();
+            // Snapshot. A markup IS the client's price, so the marked-up price is the
+            // "original": a markup alone records no discount and the order's
+            // subtotalBeforeDiscount/totalDiscount stay clean; a discount on top shows
+            // up against the marked-up price — exactly what the shop displayed.
+            // Otherwise the catalog price is the reference, so a client-specific price
+            // and/or a discount both show up as the line's discount (as before).
+            $originalPrice = $adjusted->isMarkup ? $adjusted->originalPriceForDisplay : $product->getPrice();
             $item->setOriginalUnitPrice($originalPrice);
-
-            // Update the item with the correct (possibly discounted) price
-            $item->setUnitPrice($price);
+            $item->setUnitPrice($unitPrice);
             $item->setIsCustomPrice($isCustomPrice);
 
-            // Calculate discount percentage
-            if ($originalPrice > 0 && $price < $originalPrice) {
-                $discountPercent = (($originalPrice - $price) / $originalPrice) * 100;
-                $item->setDiscountPercent(round($discountPercent, 2));
+            if ($originalPrice > 0 && $unitPrice < $originalPrice) {
+                $item->setDiscountPercent(round(($originalPrice - $unitPrice) / $originalPrice * 100, 2));
             } else {
                 $item->setDiscountPercent(0);
             }
@@ -462,6 +495,10 @@ final class OrderPriceProcessor implements ProcessorInterface
         $oldStatus = $originalOrder['status'] ?? null;
         $newStatus = $order->getStatus();
         $finalStates = [Order::STATUS_CANCELED, Order::STATUS_REVERSAL];
+        // Was the payment already registered before this request? A paid order no
+        // longer counts against the budget, so neither paying it "again" nor
+        // cancelling/reversing it afterwards may credit anything.
+        $wasPaid = ($originalOrder['paidAt'] ?? null) !== null;
 
         $isSubmission = $isDraftSubmission
             || ($isNewOrder && !$order->isDraft())
@@ -473,14 +510,61 @@ final class OrderPriceProcessor implements ProcessorInterface
             return;
         }
 
-        // Canceling/reversing an active order credits each client's portion back.
-        if (!$isNewOrder && $oldStatus !== null
-            && $oldStatus !== Order::STATUS_DRAFT
-            && !in_array($oldStatus, $finalStates, true)
-            && in_array($newStatus, $finalStates, true)
+        if ($isNewOrder || $wasPaid || $oldStatus === null || $oldStatus === Order::STATUS_DRAFT
+            || in_array($oldStatus, $finalStates, true)
         ) {
+            return;
+        }
+
+        // Payment registered with this request: the order stops being an open
+        // payment, so the client gets the amount back on its budget.
+        $justPaid = $order->getPaidAt() !== null;
+        // Canceling/reversing an unpaid active order credits each client's portion back.
+        $closedUnpaid = in_array($newStatus, $finalStates, true);
+
+        if ($justPaid || $closedUnpaid) {
             foreach ($amountsByClient as $entry) {
                 $this->creditSpending($entry['client'], $entry['amount']);
+            }
+        }
+    }
+
+    /**
+     * Agent companies never buy for themselves (product decision, Nov 2026): every
+     * line of an order placed by a user of an agent company must be on behalf of a
+     * managed customer. (Who may be delegated to is checked by ClientAgentAuthorization.)
+     */
+    private function assertAgentOrdersForCustomers(Order $order, User $user): void
+    {
+        if ($user->getClient()?->getIsClientAgent() !== true) {
+            return;
+        }
+        foreach ($order->getItems() as $item) {
+            if (($item->getOnBehalfOfClient() ?? $order->getOnBehalfOfClient()) === null) {
+                throw new BadRequestHttpException(
+                    'Agent companies order on behalf of their customers. Please select a customer for every item.'
+                );
+            }
+        }
+    }
+
+    /**
+     * Inactive products are hidden from the shop and out-of-stock products are shown
+     * but not purchasable: neither may be ordered through the API either. Admins are
+     * exempt (phone orders, corrections).
+     */
+    private function assertItemsAvailable(Order $order): void
+    {
+        foreach ($order->getItems() as $item) {
+            $product = $item->getProduct();
+            if ($product === null) {
+                continue;
+            }
+            if (!$product->getIsActive() || !$product->getInStock()) {
+                throw new BadRequestHttpException(sprintf(
+                    'Product %s is currently not available.',
+                    $product->getPartNo() ?: $product->getName()
+                ));
             }
         }
     }
@@ -755,18 +839,27 @@ final class OrderPriceProcessor implements ProcessorInterface
                 Order::STATUS_CANCELED => 'cancel',
             ],
             Order::STATUS_WAITING_FOR_PAYMENT => [
-                Order::STATUS_IN_PROCESS => 'payment_received',
+                Order::STATUS_PAID => 'payment_received',
+                Order::STATUS_CANCELED => 'cancel',
+            ],
+            Order::STATUS_PAID => [
+                Order::STATUS_IN_PROCESS => 'start_processing',
+                Order::STATUS_READY_FOR_SHIPMENT => 'ready_to_ship',
                 Order::STATUS_CANCELED => 'cancel',
             ],
             Order::STATUS_READY_FOR_SHIPMENT => [
                 Order::STATUS_SHIPPED => 'ship',
+                Order::STATUS_WAITING_FOR_PAYMENT => 'await_payment',
                 Order::STATUS_CANCELED => 'cancel',
             ],
             Order::STATUS_SHIPPED => [
                 Order::STATUS_DELIVERED => 'deliver',
+                Order::STATUS_WAITING_FOR_PAYMENT => 'await_payment',
                 Order::STATUS_REVERSAL => 'reverse',
             ],
             Order::STATUS_DELIVERED => [
+                Order::STATUS_PAID => 'payment_received',
+                Order::STATUS_WAITING_FOR_PAYMENT => 'await_payment',
                 Order::STATUS_REVERSAL => 'reverse',
             ],
         ];
