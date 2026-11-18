@@ -7,6 +7,7 @@ namespace App\Tests\Functional;
 use App\Entity\Client;
 use App\Entity\Product;
 use App\Entity\User;
+use App\Service\OrderNumberSequence;
 use Doctrine\ORM\EntityManagerInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -110,6 +111,31 @@ final class OrderNumberSequenceApiTest extends WebTestCase
         self::assertSame(201, $this->httpStatus(), json_encode($body));
         self::assertMatchesRegularExpression('/^\d{7,}$/', $body['orderNumber']);
         self::assertSame('new', $body['status']);
+    }
+
+    public function testNewOrdersContinueAfterTheHighestImportedNumber(): void
+    {
+        $existing = $this->post(['isDraft' => false, 'items' => $this->items()]);
+        self::assertSame(201, $this->httpStatus(), json_encode($existing));
+
+        // A fresher legacy import brings in an order numbered well past the counter
+        $imported = (int) $existing['orderNumber'] + 50;
+        $this->em->getConnection()->executeStatement(
+            'UPDATE `order` SET order_number = :n WHERE id = :id',
+            ['n' => (string) $imported, 'id' => $existing['id']]
+        );
+
+        $sequence = self::getContainer()->get(OrderNumberSequence::class);
+        self::assertSame($imported, $sequence->skipPastExistingOrders());
+
+        $next = $this->post(['isDraft' => false, 'items' => $this->items()]);
+        self::assertSame(201, $this->httpStatus(), json_encode($next));
+        self::assertSame($imported + 1, (int) $next['orderNumber'], 'The next order continues after the imported one');
+
+        // Without a higher imported number the counter stays put, it never goes back
+        self::assertSame($imported + 1, $sequence->skipPastExistingOrders());
+        $after = $this->post(['isDraft' => false, 'items' => $this->items()]);
+        self::assertSame($imported + 2, (int) $after['orderNumber']);
     }
 
     // ------------------------------------------------------------------
