@@ -3,6 +3,7 @@
 namespace App\Command;
 
 use App\Enum\ProductLinkRelationType;
+use App\Service\OrderNumberSequence;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -36,6 +37,7 @@ class ImportProductionDataCommand extends Command
         private readonly Connection $legacyConnection,
         private readonly EntityManagerInterface $entityManager,
         private readonly UserPasswordHasherInterface $passwordHasher,
+        private readonly OrderNumberSequence $orderNumbers,
     ) {
         parent::__construct();
     }
@@ -1507,6 +1509,11 @@ class ImportProductionDataCommand extends Command
         $this->importBatch($conn, '`order`', $rows);
         $this->resetAutoIncrement($conn, '`order`');
         $this->stats['Order'] = count($rows);
+
+        // Imported orders keep their legacy numbers; new orders must continue after the highest one
+        if (!$this->dryRun) {
+            $this->io->writeln(sprintf('  New orders will be numbered after %d', $this->orderNumbers->skipPastExistingOrders()));
+        }
     }
 
     private function importOrderItems(Connection $legacy, Connection $conn, string $defaultPassword): void
